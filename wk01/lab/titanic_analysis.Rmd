@@ -1,0 +1,79 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+rm(list = ls())
+
+library(data.table)
+# fread # very good tool to load data to R
+# install.packages("titanic")
+library(titanic)
+titanic_train
+str(titanic_train)
+
+dt <- data.table(titanic_train)
+
+dt[Sex == "female"]
+dt[, .(Name, Survived)]
+dt[, list(Name, Survived)] # does the same as . is a shortcut for list
+
+dt[, SurvivedInfo := ifelse(Survived == 1, "Survived", "Did not survive")]
+head(dt)
+
+dt[, SurvivedInfo := NULL] # deleting a column
+
+```
+
+```{r}
+dt_measures <- dt[, .(num_passangers = .N, num_survivors = sum(Survived)), by = Sex]
+dt_measures
+```
+
+```{r}
+# introducing the long format of a table instead of wide format
+dt_measures_long <- melt(dt_measures, id.vars = "Sex", measure.vars = c("num_passangers", "num_survivors"))
+dt_measures_long
+```
+
+```{r}
+dcast(dt_measures_long, Sex ~ variable)
+```
+
+```{r}
+numbers <- c(1, 2, 3, 4, 5)
+
+# writing a for loop
+for (num in numbers) {
+  print(num ^ 2)
+}
+
+# the same loop just naming it differently
+for (i in numbers) {
+  print(i ^ 2)
+}
+```
+```{r}
+model <- glm(Survived ~ Fare + Sex, data = dt, family = binomial)
+prediction <- predict.glm(model, newdata = dt, type = "response") # "response" is needed to get a result between 0 and 1
+summary(prediction)
+dt[, SurvivedScore := prediction]
+head(dt)
+
+dt[, SurvivedScoreCategory := cut(SurvivedScore, seq(0,1,0.1))]
+str(dt)
+```
+
+```{r}
+calibration <- dt[, .(mean_score = mean(SurvivedScore),
+                      mean_survival = mean(Survived),
+                                       num_people= .N), 
+                      keyby = SurvivedScoreCategory]
+```
+```{r}
+library(ggplot2)
+ggplot(data = calibration, aes(x = mean_score, y = mean_survival, size = num_people)) + geom_point() + geom_abline(intercept = 0, slope = 1, linetype = "dashed")
+
+```
+
