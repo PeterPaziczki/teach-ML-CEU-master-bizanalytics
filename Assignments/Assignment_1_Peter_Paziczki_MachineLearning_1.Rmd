@@ -1,7 +1,8 @@
 ---
-title: "Machine Learning 1 - Homework assignment 1"
+title: "Homework assignment 1"
+subtitle: "Data Science and Machine Learning 1 - CEU 2018"
 author: "Peter Paziczki"
-date: '2018 január 29'
+date: '2018 január 28'
 output: html_document
 ---
 
@@ -16,6 +17,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 #1. Model selection with a validation set
+
+Loading the necessary packages:
 
 ```{r}
 ## loading necessary packages
@@ -37,7 +40,7 @@ data[, log_price := log(price)]
 data[, c("id", "date", "sqft_living15", "sqft_lot15", "price") := NULL]
 ```
 
-### 1.1 Using createDataPartition, cut your data into three parts: 50% should be your training data, 25% each your validation and test sets (hint: cut data into two parts, then further cut one part into two).
+### 1.1 Using `createDataPartition`, cut your data into three parts: 50% should be your training data, 25% each your validation and test sets (hint: cut data into two parts, then further cut one part into two).
 
 ```{r}
 set.seed(1234)
@@ -121,7 +124,7 @@ final_performance_measure <- RMSE(predict.train(linear_fit, data_test),
 final_performance_measure
 ```
 
-The three different data sets are used for different purposes. The training data set is used to fit the different models (two linear models and a regression tree in our case), while the validation data is used for model selection, the performance of different models are compared and the best is chosen. In our case the one that produced the lowest RMSE. Once the model is chosen, it is to be tested on a data set that was not used for training or model selection. On this test data the generalization error of the final model isto  be assessed.
+The three different data sets are used for different purposes. The training data set is used to fit the different models (two linear models and a regression tree in our case), while the validation data is used for model selection, the performance of different models are compared and the best is chosen. In our case the one that produced the lowest RMSE. Once the model is chosen, it is to be tested on a data set that was not used for training or model selection, this data set is independent of the others. (It is expected to have the same distribution as the training data set.) On this test data the generalization error of the final model is to  be assessed.
 
 ### 1.5 Do you think it makes more sense to use this method rather than the one used in class? What can be advantages or disadvantages of one or the other?
 
@@ -176,7 +179,7 @@ ggplot(data, aes(FormalEducation)) + geom_bar() + theme(axis.text.x = element_te
 
 #### 2.2.2 Mean salary by country
 
-The below charts show what is the average salary per country. Based on the given data it is the highest in Switzerland and in the United States, the lowest in Pakistan and India. Hungary is just slightly above the 1st quartile. Romania and Ukraine is behind Hungary, even Poland.
+The below charts show what is the average salary per country. Based on the given data it is the highest in Switzerland and in the United States, the lowest in Pakistan and India. Hungary is just slightly above the 1st quantile. Romania and Ukraine is behind Hungary, even Poland.
 
 ```{r}
 ## Mean salary by country
@@ -307,12 +310,15 @@ Evaluating the model chosen above, the RMSE is 1.009924 on the test data set.
 
 Please find scatterplots below showing the log_salary (true values) and log_salary_prediction (predicted values) pairs of the test set, with log_salary on the x axis and log_salary_prediction on the y axis. We can see horizontal "drawn by the points", the reason for that is that regression tree has been chosen as prediction method. It clearly shows how the regression tree works, the same prediction can be assigned to different values. (If regression has been chosen, in that case different values would have been predicted for different observations.)
 
+I have added a line with a slope of 1 to show where the prefect prediction would be. We can see that the model has a lot of errors.
+
 ```{r}
 #ggplot(rpart_fit) + scale_x_log10()
 
 # Capturing the predictions
 data_test[,log_salary_prediction := predict.train(rpart_fit, newdata = data_test)]
-ggplot(data_test, aes(x = log_salary, log_salary_prediction)) + geom_point()
+ggplot(data_test, aes(x = log_salary, log_salary_prediction)) + geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed")
 ```
 
 (Sidenote: If only the salaries that are more than 1 were kept, the RMSE were a bit better.)
@@ -321,21 +327,74 @@ ggplot(data_test, aes(x = log_salary, log_salary_prediction)) + geom_point()
 
 Leave-one-out cross validation (LOOCV) is a special case of k-fold cross validation where k equals the number of points in the sample.
 
-+ Name a disadvantage of this method compared to using a moderate value (say, 10) for k?
+## 3.1 Name a disadvantage of this method compared to using a moderate value (say, 10) for k?
 
-The computational time and power needed to compute LOOCV is higher than doing a 5 or 10-fold cross-validation, so it is computationally intensive. The other property of LOOCV is that it has low bias, but can have high variance, because all the observations are used for estimation except one which is used for test.
+The computational time and power needed to compute LOOCV is higher than doing a 5 or 10-fold cross-validation, so it is computationally intensive. 
 
-+ Why do you think it can still make sense to compute this measure? In what way can this measure be closer to the “real” performance of the model?
+## 3.2 Why do you think it can still make sense to compute this measure? In what way can this measure be closer to the “real” performance of the model?
 
-In case of having very scarce data it can be option as it works well on small data sets.
+In case of having very scarce data it can be option as it works well on small data sets. A property of LOOCV is that it has low bias, but can have high variance, because all the observations are used for estimation except one which is used for test.
 
-Take the titanic dataset.
+Loading the Titanic data set
 
 ```{r}
 library(titanic)
 library(data.table)
 
 data_train <- data.table(titanic_train)
+data_test <- data.table(titanic_test)
 # recode Survived to factor - needed for binary prediction
 data_train[, Survived := factor(ifelse(Survived == 1, "survived", "died"))]
+```
+
+## 3.3 You can implement LOOCV with caret by setting an option in trainControl: method = "loocv". and use a simple logit model glm for prediction.
+
++ In caret, you can use it via method = "glm"
++ include classProbs = TRUE in trainControl to let train know that you are predicting a binary outcome
++ Implement both an LOOCV and a 10-fold cross-validation estimation using only Fare and Sex as predictor features.
+
+```{r}
+train_control <- trainControl(method = "loocv",
+                              #number = 10,
+                              classProbs = TRUE) # means i am looking for binary probabilities
+set.seed(1234)
+glm_model_loocv <- train(Survived ~ Fare + Sex,
+                   method = "glm",
+                   data = data_train,
+                   trControl = train_control)
+glm_model_loocv
+```
+
+```{r}
+train_control <- trainControl(method = "cv",
+                              number = 10,
+                              classProbs = TRUE) # means i am looking for binary probabilities
+set.seed(1234)
+glm_model_10fold <- train(Survived ~ Fare + Sex,
+                   method = "glm",
+                   data = data_train,
+                   trControl = train_control)
+glm_model_10fold
+```
+
+## 3.4 Compare the accuracy of the model estimated by the two resampling methods via summary(fitted_model$resample). Accuracy is the share of cases predicted correctly.
+
+```{r}
+summary(glm_model_loocv$resample)
+```
+
+```{r}
+summary(glm_model_10fold$resample)
+```
+
++ How large are the means?
+
+In case of the LOOCV the mean is 0.7823 and it is 0.7834 for the 10-fold cross-validation.
+
++ How do other quantiles look like? Why are quantiles of the accuracy measures of LOOCV so extreme (either 0 or 1)?
+
+Because there is only one observation I am tesing my model on each time, it is either 0 or 1, true are false. In case of 10-fold CV it is different, because I would test my model on more observation, some of them would be true and some of them would be false, and the average of those 0s and 1s can be greater or equal to 0 and less than or equal to 1.
+
+```{r}
+sessionInfo()
 ```
