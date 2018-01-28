@@ -24,6 +24,7 @@ library(ggplot2)
 library(GGally)
 library(lattice)
 library(caret)
+library(pander)
 
 ## loading the data
 data <- fread("../data/king_county_house_prices/kc_house_data.csv")
@@ -65,6 +66,7 @@ data_test <- data_val_and_test[-train_indices_2, ]
 train_control <- trainControl(method = "none")
 tune_grid <- data.frame("cp" = 0.0001)
 
+set.seed(1234)
 simple_linear_fit <- train(log_price ~ sqft_living, 
                    data = data_train, 
                    method = "lm", 
@@ -148,61 +150,89 @@ In our case all the observation with missing salaries and zero salaries have bee
 
 ### 2.2 Using graphs, find at least two interesting features that can contribute to understanding developer salaries.
 
-#### 2.2.1 Mean Salary by formal education
+#### 2.2.1 Mean salary by formal education
+
+The below chart shows the mean salary by formal education. In the given data set developers with doctoral degree earn the most on average and those have a professional degree earn the least (not considering those who chose no to answer this survey question). Is is very interesting that, based on the data set, there are developers who only have primary / elementary school as formal education but earn more on average than those who have a master's degree. This is something that is to be checked.
+
 ```{r}
 ## Mean salary by formal education
 SalaryEdu <- data[, list(AvgSalary = mean(Salary)), by = FormalEducation][order(AvgSalary)]
+pander(SalaryEdu)
 ggplot(data = SalaryEdu, aes(x=FormalEducation, y=AvgSalary)) +
   geom_bar(stat = "identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
-#### 2.2.2 Mean Salary by country
+We have seen interesting things above, it is definitely worth to see how many observation we have by education. We can see that only a few survey have been filled saying that the formal education was "Primary/elemntary school", it might be a mistake. We can clearly see that, based on the survey, the majority of those who filled the survey have at least some academic background.
+
+```{r}
+data[,.N, by = FormalEducation][order(N)]
+ggplot(data, aes(FormalEducation)) + geom_bar() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
+## Distribution of salaries by formal education
+#ggplot(data, aes(Salary)) + geom_density()  + facet_wrap(~FormalEducation)
+```
+
+#### 2.2.2 Mean salary by country
+
+The below charts show what is the average salary per country. Based on the given data it is the highest in Switzerland and in the United States, the lowest in Pakistan and India. Hungary is just slightly above the 1st quartile. Romania and Ukraine is behind Hungary, even Poland.
 
 ```{r}
 ## Mean salary by country
-SalaryCountry <- data[, list(AvgSalary = mean(Salary)), by = Country]
-ggplot(data = SalaryCountry, aes(x=Country, y=AvgSalary)) + geom_bar(stat = "identity") +
+SalaryCountry <- data[, list(AvgSalary = mean(Salary)), by = (Country = as.factor(Country))][order(AvgSalary)]
+SalaryCountry
+SalaryCountry[Country == "Hungary"]
+summary(SalaryCountry$AvgSalary)
+ggplot(data = SalaryCountry, aes(x=Country, y=AvgSalary)) +
   geom_bar(stat = "identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
 #### 2.2.3 Number of developers by gender
+
+The barchart shows that the majority of those who filled the survey were male.
 
 ```{r}
 ## Number of people per Gender
 ggplot(data, aes(Gender)) + geom_bar()
 ```
 
+#### 2.2.4 Distribution of salaries across the data set
+
+The below histogram shows the distribution of salaries in the data set, it is skewed to the right. It is to be investigated in more details. I am assuming that the salary means USD earned per year. If that assumption is correct, there are observation with practically earning a few dollars per year. Investigating it is not scope of this assignment, but it was important enough to highlight it.
+
 ```{r}
 ## Distribution of salaries
 ggplot(data, aes(Salary)) + geom_histogram()
+summary(data$Salary)
 ```
+
+#### 2.2.5 Distribution of salaries by gender
+
+The below density chart shows the disribution of salaries by gender. We can say that the distribution between male and female is very similar, but it would take more to investigate whether there is a gender gap. It is also interesting that salary distribution of those whose gender is considered as "Other" have a different distribution, there are more observations in the 0 - 25.000 USD range than in case of female or male.
 
 ```{r}
 ## Distribution of salaries by gender
 ggplot(data, aes(Salary, fill = Gender)) + geom_density(alpha = 0.3) + theme_bw()
 ```
 
+The salary differences between genders is a concerning topic, let's have a look at a boxplot of salaries by gender. Based on the data at hand females earn a bit more on average than male, but we know that a very few female have filled the survey.
+
 ```{r}
 ## Boxplot of salaries by gender
 ggplot(data, aes(Gender, Salary)) + geom_boxplot()
 ```
 
-```{r}
-## Distribution of salaries by formal education
-ggplot(data, aes(Salary)) + geom_density()  + facet_wrap(~FormalEducation)
-```
+#### 2.2.6 Number of people per company size
+
+The below barchart shows that the most represented company size is the companies with 20-99 employees. Not considering those who did not answer and couldn't answer this question, the most underrepresented company size is the companies with 5,000 - 9,999 employees.
 
 ```{r}
 ## Number of people per company size
-ggplot(data, aes(CompanySize)) + geom_bar()
+ggplot(data, aes(CompanySize)) + geom_bar() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
-```{r}
-## Boxplot of salaries by FormalEducation
-ggplot(data, aes(FormalEducation, Salary)) + geom_boxplot()
-```
-
-```{r}
+```{r unused charts}
 #ggplot(data, aes(x = Salary, FormalEducation)) + geom_point(alpha = 0.1)
 #ggplot(data, aes(x = Salary, YearsProgram)) + geom_point(alpha = 0.1)
 #ggplot(data, aes(x = Salary, CompanySize)) + geom_point(alpha = 0.1)
@@ -214,11 +244,98 @@ ggplot(data, aes(FormalEducation, Salary)) + geom_boxplot()
 #ggplot(data, aes(Country)) + geom_bar()
 ## Number of people per ProgramHobby
 #ggplot(data, aes(ProgramHobby)) + geom_bar()
+## Boxplot of salaries by FormalEducation
+#ggplot(data, aes(FormalEducation, Salary)) + geom_boxplot()
 ```
 
 ### 2.3 Create a training and a test set assigning 70% to the training set and 30% as the test set.
+
+```{r}
+set.seed(1234)
+data[, log_salary := log(Salary)]
+training_ratio <- 0.7
+train_indices <- createDataPartition(y = data[["Salary"]],
+                                     times = 1,
+                                     p = training_ratio,
+                                     list = FALSE)
+data_train <- data[train_indices, ]
+data_test <- data[-train_indices, ]
+```
+
 ### 2.4 Using caret train at least two predictive models to predict the logarithm of Salary (they can be of the same family but with different hyperparameters or they can be of different families like we used lm and rpart in the first exercise). Make sure NOT to include Salary as a predictor variable. Also, just before calling train, remember to use set.seed.
 
+```{r}
+train_control <- trainControl(method = "cv", number = 10)
+tune_grid <- data.frame("cp" = c(0.01, 0.005, 
+                                 0.001, 0.0005,
+                                 0.0001, 0.00005,
+                                 0.00001, 0.000005))
+N <- nrow(tune_grid)
+```
+
+I am choosing the method of regression trees with `r N` different complexity parameters as hyperparameters and working with 10-fold cross-validation.
+
+```{r}
+set.seed(1234)
+
+# linear_fit <- train(log_salary ~ . -Salary, data = data_train, method = "lm", trControl = train_control)
+
+rpart_fit <- train(log_salary ~ . -Salary, 
+                   data = data_train, 
+                   method = "rpart", 
+                   trControl = train_control,
+                   tuneGrid = tune_grid)
+rpart_fit
+```
+
 + choose the best model based on cross-validation estimation on the training set
+
+The best performance (lowest RMSE = 0.9898655) has been achieved by the model using cp = 0.001.
+
 + evaluate its performance on the test set
+
+```{r}
+rpart_rmse <- RMSE(predict.train(rpart_fit, data_test), 
+                          data_test[["log_salary"]])
+
+rpart_rmse
+```
+
+Evaluating the model chosen above, the RMSE is 1.009924 on the test data set.
+
 ### 2.5 compare the true and predicted values of the test set on a graph. How do you evaluate the model fit based on this graph?
+
+Please find scatterplots below showing the log_salary (true values) and log_salary_prediction (predicted values) pairs of the test set, with log_salary on the x axis and log_salary_prediction on the y axis. We can see horizontal "drawn by the points", the reason for that is that regression tree has been chosen as prediction method. It clearly shows how the regression tree works, the same prediction can be assigned to different values. (If regression has been chosen, in that case different values would have been predicted for different observations.)
+
+```{r}
+#ggplot(rpart_fit) + scale_x_log10()
+
+# Capturing the predictions
+data_test[,log_salary_prediction := predict.train(rpart_fit, newdata = data_test)]
+ggplot(data_test, aes(x = log_salary, log_salary_prediction)) + geom_point()
+```
+
+(Sidenote: If only the salaries that are more than 1 were kept, the RMSE were a bit better.)
+
+# 3. Leave-one-out cross validation
+
+Leave-one-out cross validation (LOOCV) is a special case of k-fold cross validation where k equals the number of points in the sample.
+
++ Name a disadvantage of this method compared to using a moderate value (say, 10) for k?
+
+The computational time and power needed to compute LOOCV is higher than doing a 5 or 10-fold cross-validation, so it is computationally intensive. The other property of LOOCV is that it has low bias, but can have high variance, because all the observations are used for estimation except one which is used for test.
+
++ Why do you think it can still make sense to compute this measure? In what way can this measure be closer to the “real” performance of the model?
+
+In case of having very scarce data it can be option as it works well on small data sets.
+
+Take the titanic dataset.
+
+```{r}
+library(titanic)
+library(data.table)
+
+data_train <- data.table(titanic_train)
+# recode Survived to factor - needed for binary prediction
+data_train[, Survived := factor(ifelse(Survived == 1, "survived", "died"))]
+```
