@@ -20,6 +20,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(data.table)
 library(caret)
 library(bit64)
+library(ggplot2)
+library(GGally)
 ```
 
 # 1. Predicting mental health problems in the tech sector
@@ -32,9 +34,139 @@ data <- fread("../data/mental-health-in-tech/survey_cleaned.csv")
 data <- data[ ,c("comments", "state","work_interfere") := NULL]
 data[, age := as.numeric(age)]
 data[ , treatment := factor(treatment, levels = c("Yes", "No"))]
+
+## some additional data cleaning
+data <- data[age %between% c(18, 100)]
+
+## making treatment variable into a binary variable
+data[, treatment := ifelse(treatment == "Yes", 1, 0)]
 ```
 
 ## 1.1 Explore some predictors that can be used to predict treatment.
+
+I have transformed the `r treatment` variable into a binary variable, denoting 1 to yes. The below chart shows that there is definitely some relation between age and the ratio of people seeking treatment for a mental health condition. It is important to mentione that there is only three observation in the 60-65 range and only one in 70-75 age range.
+
+```{r}
+data_by_age <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = .(age_category = cut(age, breaks = seq(0, 100, by = 5), include.lowest = TRUE))]
+
+ggplot(data = data_by_age, aes(x = age_category, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+The below chart assesses the treatment ratio by gender. The survey has been mostly filled by male employees who, on average, tend to least seek treatment compared to female and trans gender cooworkers. 
+
+```{r}
+data[, .N, by = gender]
+
+data_by_gender <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = gender]
+
+ggplot(data = data_by_gender, aes(x = gender, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+I found it to be interesting to assess how the treatment ratio varies across countries. Having all the countries does not make sense, there are several countries with 1 or a bit more observations.
+
+```{r}
+data[,.N, by = country]
+
+data_by_country <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = country]
+
+ggplot(data = data_by_country, aes(x = country, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+I have dropped the countries that had less than `r 10` observations. Now with still having the 91.5% of the observations, the countries left in the data set could be good predictors. In France and India only a low portion of employees sought treatment, while in Australia it is the highest.
+
+```{r}
+large_countries <- data_by_country[num_obs >= 10]
+
+ggplot(data = large_countries, aes(x = country, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Those who have a family history of mental illness tend to seek treatment in a much higher ratio than those who don't have. I am expecting it to be a good predictor.
+
+```{r}
+data_family_history <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = family_history]
+
+ggplot(data = data_family_history, aes(x = family_history, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Those whose employer provides mental health benefits tend to seek treatment in a higher ratio, it also seems to be a good predictor.
+
+```{r}
+data_benefits <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = benefits]
+
+ggplot(data = data_benefits, aes(x = benefits, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+It is quite interesting, but based on the data more difficult is to take advantage of a mental health or substance abuse treatment resources, the more employees tend to seek treatment.
+
+```{r}
+data_leave <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = leave]
+
+ggplot(data = data_leave, aes(x = leave, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Please find a few examples below where I was expecting to find good predictors but they were found to be not good predictors.
+
+Being self employed does not seem to be a good predictor, there is only a slight difference between the groups in treatment ratio.
+
+```{r}
+data_self_employed <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = self_employed]
+
+ggplot(data = data_self_employed, aes(x = self_employed, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+There is no significant difference in treatment ratio among different company sizes, considering the company size does not seem to be a good predictor.
+
+```{r}
+data_no_employee <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = no_employees]
+
+ggplot(data = data_no_employee, aes(x = no_employees, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Having the anonymity protected does not seem to play a significant role in seeking or not seeking treatment.
+
+```{r}
+data_anonymity <- data[ ,
+  .(treatment_rate = mean(treatment), num_obs = .N),
+  keyby = anonymity]
+
+ggplot(data = data_anonymity, aes(x = anonymity, y = treatment_rate, size = num_obs)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
 
 ## 1.2 Partition your data to 70% training and 30% test samples.
 

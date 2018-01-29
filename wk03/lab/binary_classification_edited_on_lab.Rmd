@@ -62,7 +62,7 @@ setnames(data,
 # clean up a little bit
 data <- data[age %between% c(0, 95)]
 # for binary prediction with caret, the target variable must be a factor
-data[, no_show := factor(no_show, levels = c("Yes", "No"))] # making it a factr is necessary because of using caret
+data[, no_show := factor(no_show, levels = c("Yes", "No"))] # making it a factor is necessary because of using caret
 data[, no_show_num := ifelse(no_show == "Yes", 1, 0)]
 data[, handicap := ifelse(handicap > 0, 1, 0)]
 
