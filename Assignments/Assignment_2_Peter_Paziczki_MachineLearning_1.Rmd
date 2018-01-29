@@ -1,0 +1,85 @@
+---
+title: "Homework assignment 2"
+subtitle: "Data Science and Machine Learning 1 - CEU 2018"
+author: "Peter Paziczki"
+date: '2018 február 5'
+output: html_document
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(caret)
+library(bit64)
+```
+
+# 1. Predicting mental health problems in the tech sector
+
+The variable to predict is treatment.
+
+```{r}
+data <- fread("../data/mental-health-in-tech/survey_cleaned.csv")
+
+data <- data[ ,c("comments", "state","work_interfere") := NULL]
+data[, age := as.numeric(age)]
+data[ , treatment := factor(treatment, levels = c("Yes", "No"))]
+```
+
+## 1.1 Explore some predictors that can be used to predict treatment.
+
+## 1.2 Partition your data to 70% training and 30% test samples.
+
+```{r}
+set.seed(1234)
+training_ratio <- 0.7
+train_indices <- createDataPartition(y = data[["treatment"]],
+                                     times = 1,
+                                     p = training_ratio,
+                                     list = FALSE)
+data_train <- data[train_indices, ]
+data_test <- data[-train_indices, ]
+```
+
+## 1.3 Build models with glmnet and rpart that predict the binary outcome of treatment (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use metric = "ROC" in train and also don’t forget to use classProbs = TRUE, summaryFunction = twoClassSummary in  trainControl). Make sure to set the same seed before each call to train.
+
+## 1.4 Compare models based on their predictive performance based on the cross-validation information (you can just use the mean AUC to select the best model).
+
+## 1.5 Evaluate the best model on the test set: draw an ROC curve and calculate and interpret the AUC.
+
+## 1.6 If you have to choose a probability threshold to predict the outcome, what would you choose? At this threshold, how large are the true positive rate and the false positive rate? How many false positives and false negatives there are in the test sample?
+
+
+
+
+# 2. Transformed scores
+
+Take the medical appointment no-show dataset we used in class and apply all the cleaning steps we did, then create a training and a test set. Estimate a predictive model of your choice for no_show as a target variable. Get predicted scores (probabilities). Then calculate two transformations of the scores: take the square root and the square of the probabilities. These are valid scores as well, they are alse between 0 and 1 so they can be used for classification.
+
+```{r}
+data <- fread("../data/medical-appointments-no-show/no-show-data.csv")
+
+# [... apply the cleaning steps we did in class ...]
+# [... create train and test sets ... ]
+
+model <- train(...)
+
+prediction <- predict.train(model, newdata = data_test, type = "prob")
+prediction_sqrt <- sqrt(prediction)
+prediction_sq <- prediction^2
+```
+
+## 2.1 Draw ROC curves for all three scores and calculate the AUC. How do they compare? Is it surprising in light of the interpretation of the AUC?
+## 2.2 What is the key, common property of both the square root and the square functions that leads to this finding?
+## 2.3 Draw a calibration plot for all three scores separately:
++group people into bins based on predicted scores
++display on a scatterplot the mean of the predicted scores versus the actual share of people surviving
++How do they compare? Which score(s) can be regarded as well-calibrated probabilites?
