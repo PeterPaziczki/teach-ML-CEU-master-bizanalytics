@@ -39,7 +39,8 @@ data[ , treatment := factor(treatment, levels = c("Yes", "No"))]
 data <- data[age %between% c(18, 100)]
 
 ## making treatment variable into a binary variable
-data[, treatment := ifelse(treatment == "Yes", 1, 0)]
+data[, treatment_binary := ifelse(treatment == "Yes", 1, 0)]
+data <- data[ ,c("Timestamp") := NULL]
 ```
 
 ## 1.1 Explore some predictors that can be used to predict treatment.
@@ -48,7 +49,7 @@ I have transformed the `r treatment` variable into a binary variable, denoting 1
 
 ```{r}
 data_by_age <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = .(age_category = cut(age, breaks = seq(0, 100, by = 5), include.lowest = TRUE))]
 
 ggplot(data = data_by_age, aes(x = age_category, y = treatment_rate, size = num_obs)) +
@@ -62,7 +63,7 @@ The below chart assesses the treatment ratio by gender. The survey has been most
 data[, .N, by = gender]
 
 data_by_gender <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = gender]
 
 ggplot(data = data_by_gender, aes(x = gender, y = treatment_rate, size = num_obs)) +
@@ -76,7 +77,7 @@ I found it to be interesting to assess how the treatment ratio varies across cou
 data[,.N, by = country]
 
 data_by_country <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = country]
 
 ggplot(data = data_by_country, aes(x = country, y = treatment_rate, size = num_obs)) +
@@ -98,7 +99,7 @@ Those who have a family history of mental illness tend to seek treatment in a mu
 
 ```{r}
 data_family_history <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = family_history]
 
 ggplot(data = data_family_history, aes(x = family_history, y = treatment_rate, size = num_obs)) +
@@ -110,7 +111,7 @@ Those whose employer provides mental health benefits tend to seek treatment in a
 
 ```{r}
 data_benefits <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = benefits]
 
 ggplot(data = data_benefits, aes(x = benefits, y = treatment_rate, size = num_obs)) +
@@ -122,7 +123,7 @@ It is quite interesting, but based on the data more difficult is to take advanta
 
 ```{r}
 data_leave <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = leave]
 
 ggplot(data = data_leave, aes(x = leave, y = treatment_rate, size = num_obs)) +
@@ -136,7 +137,7 @@ Being self employed does not seem to be a good predictor, there is only a slight
 
 ```{r}
 data_self_employed <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = self_employed]
 
 ggplot(data = data_self_employed, aes(x = self_employed, y = treatment_rate, size = num_obs)) +
@@ -148,7 +149,7 @@ There is no significant difference in treatment ratio among different company si
 
 ```{r}
 data_no_employee <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = no_employees]
 
 ggplot(data = data_no_employee, aes(x = no_employees, y = treatment_rate, size = num_obs)) +
@@ -160,7 +161,7 @@ Having the anonymity protected does not seem to play a significant role in seeki
 
 ```{r}
 data_anonymity <- data[ ,
-  .(treatment_rate = mean(treatment), num_obs = .N),
+  .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = anonymity]
 
 ggplot(data = data_anonymity, aes(x = anonymity, y = treatment_rate, size = num_obs)) +
@@ -182,6 +183,46 @@ data_test <- data[-train_indices, ]
 ```
 
 ## 1.3 Build models with `r glmnet` and `r rpart` that predict the binary outcome of `r treatment` (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use `r metric = "ROC"` in train and also don’t forget to use `r classProbs = TRUE, summaryFunction = twoClassSummary` in  trainControl). Make sure to set the same seed before each call to train.
+
+```{r}
+# glmnet model for cross-validation, hold-out set AUCs
+train_control <- trainControl(method = "cv",
+                              number = 10,
+                              classProbs = TRUE,
+                              verboseIter = TRUE,
+                              summaryFunction = twoClassSummary)
+
+tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
+                         "lambda" = c(0.1, 0.01, 0.001, 0.0001))
+
+set.seed(1234)
+glmnet_model <- train(treatment ~
+                      poly(age, 2) + gender + country + family_history + benefits + leave,
+                      data = data_train,
+                      method = "glmnet",
+                      preProcess = c("center", "scale"),
+                      trControl = train_control,
+                      tuneGrid = tune_grid,
+                      metric = "ROC")
+glmnet_model
+```
+
+
+
+```{r}
+tune_grid <- data.frame("cp" = c(0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001))
+
+set.seed(1234)
+rpart_model <- train(treatment ~ 
+                      poly(age, 2) + gender + country + family_history + benefits + leave,
+                      data = data_train,
+                      method = "rpart",
+                      preProcess = c("center", "scale"),
+                      trControl = train_control,
+                      tuneGrid = tune_grid,
+                      metric = "ROC")
+rpart_model
+```
 
 
 
