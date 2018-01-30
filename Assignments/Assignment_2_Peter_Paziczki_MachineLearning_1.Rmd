@@ -181,7 +181,9 @@ data_train <- data[train_indices, ]
 data_test <- data[-train_indices, ]
 ```
 
-## 1.3 Build models with glmnet and rpart that predict the binary outcome of treatment (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use metric = "ROC" in train and also don’t forget to use classProbs = TRUE, summaryFunction = twoClassSummary in  trainControl). Make sure to set the same seed before each call to train.
+## 1.3 Build models with `r glmnet` and `r rpart` that predict the binary outcome of `r treatment` (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use `r metric = "ROC"` in train and also don’t forget to use `r classProbs = TRUE, summaryFunction = twoClassSummary` in  trainControl). Make sure to set the same seed before each call to train.
+
+
 
 ## 1.4 Compare models based on their predictive performance based on the cross-validation information (you can just use the mean AUC to select the best model).
 
@@ -204,7 +206,9 @@ data <- fread("../data/medical-appointments-no-show/no-show-data.csv")
 
 model <- train(...)
 
-prediction <- predict.train(model, newdata = data_test, type = "prob")
+prediction <- predict.train(model, newdata = data_test, type = "prob")$Yes # type = "prob" is imprortant, prediction is a vector,
+## it gives a data frame with yes and no in two columns
+## each row has a sum of one, my prediction is the yes column.
 prediction_sqrt <- sqrt(prediction)
 prediction_sq <- prediction^2
 ```

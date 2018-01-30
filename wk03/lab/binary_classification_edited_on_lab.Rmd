@@ -321,8 +321,8 @@ validation procedure, for example.
 # glmnet example for cross-validation, hold-out set AUCs
 train_control <- trainControl(method = "cv",
                               number = 5,
-                              classProbs = TRUE,
-                              verboseIter = TRUE,
+                              classProbs = TRUE, # it is necessary
+                              verboseIter = TRUE, # i can leave it out ... it controls what will be printed about teh iteration
                               summaryFunction = twoClassSummary) # necessary!
 
 tune_grid <- expand.grid("alpha" = c(0, 1),
@@ -341,9 +341,11 @@ glmnet_model <- train(no_show ~ days_category +
                       trControl = train_control,
                       tuneGrid = tune_grid,
                       metric = "ROC")  # set it to ROC to choose models based on AUC
+## (in caret ROC is the same as AUC. AUC is the measure  of accuracy here.)
 ## we can instruct caret to focus on area under the curve instead of accuracy
 ## every ROC is the mean of 5 ROCs, because we are doing a 5-fold cross validation
 glmnet_model
+# in every line for each of the hyperparameters we have the average of the 10 different AUCs (if it was a 10-fold CV)
 ```
 
 ```{r}
