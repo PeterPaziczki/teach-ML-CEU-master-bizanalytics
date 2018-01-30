@@ -230,6 +230,40 @@ rpart_model
 
 ## 1.5 Evaluate the best model on the test set: draw an ROC curve and calculate and interpret the AUC.
 
+```{r}
+# finally, evaluate the best model on test set
+test_prediction_glmnet <- predict.train(glmnet_model, 
+                                        newdata = data_test, 
+                                        type = "prob")
+```
+
+```{r}
+# calculate AUC = area under the curve -> the measure of predictive power
+AUC <- performance(test_prediction_???, "auc")@y.values[[1]]
+print(AUC)
+```
+
+```{r}
+# compare it to previous model
+glmnet_prediction <- prediction(test_prediction_glmnet$Yes,
+                                data_test[["no_show"]])
+glmnet_perf <- performance(glmnet_prediction, measure = "tpr", x.measure = "fpr")
+
+glmnet_roc_df <- data.table(
+  model = "glmnet",
+  FPR = glmnet_perf@x.values[[1]],
+  TPR = glmnet_perf@y.values[[1]],
+  cutoff = glmnet_perf@alpha.values[[1]]
+)
+
+ggplot(glmnet_roc_df) +
+  geom_line(aes(FPR, TPR, color = model), size = 2) +
+  geom_abline(intercept = 0, slope = 1,  linetype = "dotted", col = "black") +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  xlab("False Positive Rate") + ylab("True Positive Rate")
+```
+
 ## 1.6 If you have to choose a probability threshold to predict the outcome, what would you choose? At this threshold, how large are the true positive rate and the false positive rate? How many false positives and false negatives there are in the test sample?
 
 
