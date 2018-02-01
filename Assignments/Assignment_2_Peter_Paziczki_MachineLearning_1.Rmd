@@ -269,6 +269,7 @@ ggplot(glmnet_roc_df) +
 
 
 
+
 # 2. Transformed scores
 
 Take the medical appointment no-show dataset we used in class and apply all the cleaning steps we did, then create a training and a test set. Estimate a predictive model of your choice for no_show as a target variable. Get predicted scores (probabilities). Then calculate two transformations of the scores: take the square root and the square of the probabilities. These are valid scores as well, they are alse between 0 and 1 so they can be used for classification.
