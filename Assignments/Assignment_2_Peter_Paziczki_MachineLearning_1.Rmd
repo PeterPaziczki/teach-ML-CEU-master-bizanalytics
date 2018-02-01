@@ -22,6 +22,10 @@ library(caret)
 library(bit64)
 library(ggplot2)
 library(GGally)
+library(gplots)
+library(ROCR) # performance function
+#library(e1071)
+#library(glmnet)
 ```
 
 # 1. Predicting mental health problems in the tech sector
@@ -41,6 +45,11 @@ data <- data[age %between% c(18, 100)]
 ## making treatment variable into a binary variable
 data[, treatment_binary := ifelse(treatment == "Yes", 1, 0)]
 data <- data[ ,c("Timestamp") := NULL]
+
+## creating large_countries to filter small countries out of the dataset
+data[,.N, by = country]
+large_countries <- data[, .N, by = "country"][N > 10][["country"]]
+data <- data[country %in% large_countries]
 ```
 
 ## 1.1 Explore some predictors that can be used to predict treatment.
@@ -224,8 +233,6 @@ rpart_model <- train(treatment ~
 rpart_model
 ```
 
-
-
 ## 1.4 Compare models based on their predictive performance based on the cross-validation information (you can just use the mean AUC to select the best model).
 
 ## 1.5 Evaluate the best model on the test set: draw an ROC curve and calculate and interpret the AUC.
@@ -237,38 +244,44 @@ test_prediction_glmnet <- predict.train(glmnet_model,
                                         type = "prob")
 ```
 
+Drawing the ROC curve in two different ways
+
+```{r}
+glmnet_prediction <- prediction(test_prediction_glmnet$Yes,
+                              data_test[["treatment"]])
+
+# built-in plot method
+plot(performance(glmnet_prediction, "tpr", "fpr"), colorize=TRUE) 
+```
+
 ```{r}
 # calculate AUC = area under the curve -> the measure of predictive power
-AUC <- performance(test_prediction_???, "auc")@y.values[[1]]
+AUC <- performance(glmnet_prediction, "auc")@y.values[[1]]
 print(AUC)
 ```
 
 ```{r}
-# compare it to previous model
-glmnet_prediction <- prediction(test_prediction_glmnet$Yes,
-                                data_test[["no_show"]])
-glmnet_perf <- performance(glmnet_prediction, measure = "tpr", x.measure = "fpr")
+# a ggplot version
+# using prediction function from ROCR package
+glm_perf <- performance(glmnet_prediction, measure = "tpr", x.measure = "fpr")
 
-glmnet_roc_df <- data.table(
-  model = "glmnet",
-  FPR = glmnet_perf@x.values[[1]],
-  TPR = glmnet_perf@y.values[[1]],
-  cutoff = glmnet_perf@alpha.values[[1]]
+glm_roc_df <- data.table(
+  model = "glm",
+  FPR = glm_perf@x.values[[1]],
+  TPR = glm_perf@y.values[[1]],
+  cutoff = glm_perf@alpha.values[[1]] # cutoff is the treshold
 )
 
-ggplot(glmnet_roc_df) +
-  geom_line(aes(FPR, TPR, color = model), size = 2) +
+ggplot(glm_roc_df) +
+  geom_line(aes(FPR, TPR, color = cutoff), size = 2) +
+  geom_ribbon(aes(FPR, ymin = 0, ymax = TPR), fill = "blue", alpha = 0.1) +
   geom_abline(intercept = 0, slope = 1,  linetype = "dotted", col = "black") +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
   scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
-  xlab("False Positive Rate") + ylab("True Positive Rate")
+  xlab("False Positive Rate") + ylab("True Positive Rate") 
 ```
 
 ## 1.6 If you have to choose a probability threshold to predict the outcome, what would you choose? At this threshold, how large are the true positive rate and the false positive rate? How many false positives and false negatives there are in the test sample?
-
-
-
-
 
 # 2. Transformed scores
 
