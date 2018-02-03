@@ -437,11 +437,10 @@ glmnet_model
 ```{r}
 prediction <- predict.train(glmnet_model, newdata = data_test, type = "prob")
 prediction_sqrt <- sqrt(prediction)
-prediction_sq <- prediction^2
+prediction_sq <- data.frame(prediction^2)
 ```
 
 ## 2.1 Draw ROC curves for all three scores and calculate the AUC. How do they compare? Is it surprising in light of the interpretation of the AUC?
-
 
 ```{r}
 # a ggplot version
@@ -450,8 +449,8 @@ glmnet_prediction <- prediction(prediction$Yes,
                               data_test[["no_show"]])
 glmnet_prediction_sqrt <- prediction(prediction_sqrt$Yes,
                               data_test[["no_show"]])
-#glmnet_prediction_sq <- prediction(prediction_sq$Yes,
-                            #  data_test[["no_show"]])
+glmnet_prediction_sq <- prediction(prediction_sq$Yes,
+                              data_test[["no_show"]])
 
 glm_perf <- performance(glmnet_prediction, measure = "tpr", x.measure = "fpr")
 
@@ -471,7 +470,16 @@ glmnet_roc_prediction__sqrt_df <- data.table(
   cutoff = glm_perf_sqrt@alpha.values[[1]] # cutoff is the treshold
 )
 
-roc_df <- rbind(glmnet_roc_prediction_df, glmnet_roc_prediction__sqrt_df)
+glm_perf_sq <- performance(glmnet_prediction_sq, measure = "tpr", x.measure = "fpr")
+
+glmnet_roc_prediction__sq_df <- data.table(
+  model = "glmnet_prediction_sq",
+  FPR = glm_perf_sq@x.values[[1]],
+  TPR = glm_perf_sqrt@y.values[[1]],
+  cutoff = glm_perf_sq@alpha.values[[1]] # cutoff is the treshold
+)
+
+roc_df <- rbind(glmnet_roc_prediction_df, glmnet_roc_prediction__sqrt_df, glmnet_roc_prediction__sq_df)
 
 ggplot(roc_df) +
   geom_line(aes(FPR, TPR, color = model), size = 2) +
@@ -486,7 +494,7 @@ glmnet_prediction <- prediction(prediction$Yes,
                               data_test[["no_show"]])
 
 ## using the built-in plot method
-plot(performance(glmnet_prediction, "tpr", "fpr"), colorize=TRUE) 
+plot(performance(glmnet_prediction, "tpr", "fpr"), colorize = TRUE) 
 ```
 
 ```{r}
@@ -523,8 +531,91 @@ AUC <- performance(glmnet_prediction_sq, "auc")@y.values[[1]]
 print(AUC)
 ```
 
+All three have the same ROC curve and the same AUC value. As they have the same ROC curve, it is not suprising that the integrals of the curves are the same. The question rather is, why they have the same ROC curve. 
+
 ## 2.2 What is the key, common property of both the square root and the square functions that leads to this finding?
+
+The ROC curve gives a true positive rate for each false positive rates for different cutoff points. Having the square root or square of *prediction* won't change the curve as the ratio of TPR and FPR won't change and they are to fit in a 1 by 1 scatterplot, they would produce the same curve.
+
 ## 2.3 Draw a calibration plot for all three scores separately:
 +group people into bins based on predicted scores
 +display on a scatterplot the mean of the predicted scores versus the actual share of people surviving
+
+```{r}
+truth_numeric <- ifelse(test_truth == "Yes", 1, 0)
+score_glmnet <- prediction$Yes
+
+summary(score_glmnet)
+```
+
+```{r}
+actual_vs_predicted <- data.table(actual = truth_numeric,
+                                  predicted = score_glmnet)
+
+actual_vs_predicted[, score_category := cut(predicted,
+                                    seq(0, 0.6, 0.05),
+                                    include.lowest = TRUE)]
+calibration <- actual_vs_predicted[, .(mean_actual = mean(actual),
+                                       mean_predicted = mean(predicted),
+                                       num_obs = .N),
+                                   keyby = .(score_category)]
+ggplot(calibration,
+       aes(x = mean_actual, y = mean_predicted, size = num_obs)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  ylim(0, 1) + xlim(0, 1)
+```
+
+```{r}
+truth_numeric <- ifelse(test_truth == "Yes", 1, 0)
+score_glmnet <- prediction_sqrt$Yes
+
+summary(score_glmnet)
+```
+
+```{r}
+actual_vs_predicted <- data.table(actual = truth_numeric,
+                                  predicted = score_glmnet)
+
+actual_vs_predicted[, score_category := cut(predicted,
+                                    seq(0, 0.6, 0.05),
+                                    include.lowest = TRUE)]
+calibration <- actual_vs_predicted[, .(mean_actual = mean(actual),
+                                       mean_predicted = mean(predicted),
+                                       num_obs = .N),
+                                   keyby = .(score_category)]
+ggplot(calibration,
+       aes(x = mean_actual, y = mean_predicted, size = num_obs)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  ylim(0, 1) + xlim(0, 1)
+```
+
+```{r}
+truth_numeric <- ifelse(test_truth == "Yes", 1, 0)
+score_glmnet <- prediction_sq$Yes
+
+summary(score_glmnet)
+```
+
+```{r}
+actual_vs_predicted <- data.table(actual = truth_numeric,
+                                  predicted = score_glmnet)
+
+actual_vs_predicted[, score_category := cut(predicted,
+                                    seq(0, 0.6, 0.05),
+                                    include.lowest = TRUE)]
+calibration <- actual_vs_predicted[, .(mean_actual = mean(actual),
+                                       mean_predicted = mean(predicted),
+                                       num_obs = .N),
+                                   keyby = .(score_category)]
+ggplot(calibration,
+       aes(x = mean_actual, y = mean_predicted, size = num_obs)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  ylim(0, 1) + xlim(0, 1)
+```
+
 +How do they compare? Which score(s) can be regarded as well-calibrated probabilites?
+
+???
