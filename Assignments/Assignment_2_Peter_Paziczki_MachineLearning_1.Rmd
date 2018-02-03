@@ -46,7 +46,7 @@ data <- data[age %between% c(18, 100)]
 data[, treatment_binary := ifelse(treatment == "Yes", 1, 0)]
 data <- data[ ,c("Timestamp") := NULL]
 
-## creating large_countries to filter small countries out of the dataset
+## creating large_countries vector to filter small countries out of the dataset
 data[,.N, by = country]
 large_countries <- data[, .N, by = "country"][N > 10][["country"]]
 data <- data[country %in% large_countries]
@@ -54,7 +54,7 @@ data <- data[country %in% large_countries]
 
 ## 1.1 Explore some predictors that can be used to predict treatment.
 
-I have transformed the `r treatment` variable into a binary variable, denoting 1 to yes. The below chart shows that there is definitely some relation between age and the ratio of people seeking treatment for a mental health condition. It is important to mentione that there is only three observation in the 60-65 range and only one in 70-75 age range.
+I have transformed the `treatment` variable into a binary variable, denoting 1 to yes. The below chart shows that there is definitely some relation between age and the ratio of people seeking treatment for a mental health condition. It is important to mentione that there is only three observation in the 60-65 range and only one in 70-75 age range.
 
 ```{r}
 data_by_age <- data[ ,
@@ -191,14 +191,14 @@ data_train <- data[train_indices, ]
 data_test <- data[-train_indices, ]
 ```
 
-## 1.3 Build models with `r glmnet` and `r rpart` that predict the binary outcome of `r treatment` (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use `r metric = "ROC"` in train and also don’t forget to use `r classProbs = TRUE, summaryFunction = twoClassSummary` in  trainControl). Make sure to set the same seed before each call to train.
+## 1.3 Build models with `glmnet` and `rpart` that predict the binary outcome of `treatment` (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use `metric = "ROC"` in train and also don’t forget to use `classProbs = TRUE, summaryFunction = twoClassSummary` in  trainControl). Make sure to set the same seed before each call to train.
 
 ```{r}
 # glmnet model for cross-validation, hold-out set AUCs
 train_control <- trainControl(method = "cv",
                               number = 10,
                               classProbs = TRUE,
-                              verboseIter = TRUE,
+                              #verboseIter = TRUE,
                               summaryFunction = twoClassSummary)
 
 tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
@@ -235,30 +235,32 @@ rpart_model
 
 ## 1.4 Compare models based on their predictive performance based on the cross-validation information (you can just use the mean AUC to select the best model).
 
+`glmnet` provided a better performance, a higher ROC value: `0.7448523`, I am picking this model.
+
 ## 1.5 Evaluate the best model on the test set: draw an ROC curve and calculate and interpret the AUC.
 
+Evaluating the glmnet model on test set:
+
 ```{r}
-# finally, evaluate the best model on test set
-test_prediction_glmnet <- predict.train(glmnet_model, 
+## evaluating the glmnet model on test set
+test_prediction_glmnet_probs <- predict.train(glmnet_model, 
                                         newdata = data_test, 
-                                        type = "prob")
+                                        type = "prob") # obtaining probabilities instead of binary predictions
 ```
 
-Drawing the ROC curve in two different ways
+Drawing the ROC curve by using the built-in plot method:
 
 ```{r}
-glmnet_prediction <- prediction(test_prediction_glmnet$Yes,
+glmnet_prediction <- prediction(test_prediction_glmnet_probs$Yes,
                               data_test[["treatment"]])
 
-# built-in plot method
+## using the built-in plot method
 plot(performance(glmnet_prediction, "tpr", "fpr"), colorize=TRUE) 
 ```
 
-```{r}
-# calculate AUC = area under the curve -> the measure of predictive power
-AUC <- performance(glmnet_prediction, "auc")@y.values[[1]]
-print(AUC)
-```
+The ROC curve is a two-dimensional plot with false positive rate on the x axis and true positive rate on the y axis. The ROC curve is used to display the previously mentioned values. It can interpreted as displaying the true positive rates for any false positive rates. The higher the true positive rate is, the better the model is.
+
+Drawing ROC curve by using ggplot:
 
 ```{r}
 # a ggplot version
@@ -281,7 +283,69 @@ ggplot(glm_roc_df) +
   xlab("False Positive Rate") + ylab("True Positive Rate") 
 ```
 
+The dotted line has a slope of 1 and serves as a visual aid, the area under it is 0.5. If classification had been done randomly with true probabilitay, it would have the curve of that.
+
+Calculating AUC:
+
+```{r}
+## calculating AUC = area under the curve -> the measure of predictive power
+AUC <- performance(glmnet_prediction, "auc")@y.values[[1]]
+print(AUC)
+```
+
+AUC stands for *Area under the curve*, it is practically the integral of ROC curve, the higher the value, the better the prediction is. It is a model independent way to assess the predictive performance of the model.
+
 ## 1.6 If you have to choose a probability threshold to predict the outcome, what would you choose? At this threshold, how large are the true positive rate and the false positive rate? How many false positives and false negatives there are in the test sample?
+
+Calling a `confusionMatrix` to see how many true and false values the model predicts:
+
+```{r}
+test_truth <- data_test[["treatment"]]
+test_prediction_glmnet <- predict.train(glmnet_model, 
+                                        newdata = data_test) # obtaining binary prediction instead of probabilities
+
+confusionMatrix(test_prediction_glmnet, test_truth)
+```
+
+The accuracy shows the share of rightly predicted outcomes with the default threshold of `predict.train` function. It uses a 50% threshold for prediction by default, meaning that if prediction is more than or equal to 0.5, it will be labelled as yes and no otherwise. Running the model with the different thresholds:
+
+```{r}
+thresholds <- seq(0.1, 0.95, by = 0.05)
+
+true_positive_rates <- rep(0, length(thresholds)) 
+false_positive_rates <- rep(0, length(thresholds)) 
+
+for (ix in 1:length(thresholds)) {
+  thr <- thresholds[ix]
+  test_prediction <- ifelse(test_prediction_glmnet_probs$Yes > thr, "Yes", "No")
+  test_prediction <- factor(test_prediction, levels = c("Yes", "No"))
+  cm <- as.matrix(confusionMatrix(test_prediction, test_truth))
+  true_positive_rates[ix] <- cm[1, 1] / (cm[1, 1] + cm[2, 1])
+  false_positive_rates[ix] <- cm[1, 2] / (cm[1, 2] + cm[2, 2])
+  print(paste("Threshold:", thr))
+  print(confusionMatrix(test_prediction, test_truth)[["table"]])
+} 
+```
+
+After scannig through a few possible thresholds, 0.4 seems to be the one that gives the most true predictions. The true positive rate is the ratio of true positive predictions and the sum of all positive outcomes, it is `r true_positive_rates[7]`. The false negative rate is the share of false positives in all the negative outcomes, it is `r false_positive_rates[7]`. When having a threshold of 0.4 we have 80 false positives and 31 false negatives.
+
+```{r}
+true_positive_rates[7]
+false_positive_rates[7]
+```
+
+Please find the true positive and false positive rates for all the thresholds displayed on the following plot:
+
+```{r}
+manual_roc <- data.table("threshold" = thresholds,
+                         "true_positive_rate" = true_positive_rates,
+                         "false_positive_rate" = false_positive_rates)
+ggplot(data = manual_roc, 
+       aes(x = false_positive_rate,
+           y = true_positive_rate,
+           color = threshold)) +
+  geom_point()
+```
 
 # 2. Transformed scores
 
@@ -291,18 +355,174 @@ Take the medical appointment no-show dataset we used in class and apply all the 
 data <- fread("../data/medical-appointments-no-show/no-show-data.csv")
 
 # [... apply the cleaning steps we did in class ...]
+
+# some data cleaning
+data[, c("PatientId", "AppointmentID", "Neighbourhood") := NULL]
+setnames(data, 
+         c("No-show", 
+           "Age", 
+           "Gender",
+           "ScheduledDay", 
+           "AppointmentDay",
+           "Scholarship",
+           "Hipertension",
+           "Diabetes",
+           "Alcoholism",
+           "Handcap",
+           "SMS_received"), 
+         c("no_show", 
+           "age", 
+           "gender", 
+           "scheduled_day", 
+           "appointment_day",
+           "scholarship",
+           "hypertension",
+           "diabetes",
+           "alcoholism",
+           "handicap",
+           "sms_received"))
+# clean up a little bit
+data <- data[age %between% c(0, 95)]
+# for binary prediction with caret, the target variable must be a factor
+data[, no_show := factor(no_show, levels = c("Yes", "No"))] # making it a factor is necessary because of using caret
+data[, no_show_num := ifelse(no_show == "Yes", 1, 0)]
+data[, handicap := ifelse(handicap > 0, 1, 0)]
+
+# create new variables
+data[, scheduled_day := as.Date(scheduled_day)]
+data[, appointment_day := as.Date(appointment_day)]
+data[, days_since_scheduled := as.integer(appointment_day - scheduled_day)]
+data <- data[days_since_scheduled > -1]
+```
+
+```{r}
 # [... create train and test sets ... ]
 
-model <- train(...)
+# set up training and test data
+# model selection will be done via cross-validation
 
-prediction <- predict.train(model, newdata = data_test, type = "prob")$Yes # type = "prob" is imprortant, prediction is a vector,
-## it gives a data frame with yes and no in two columns
-## each row has a sum of one, my prediction is the yes column.
+training_ratio <- 0.5 
+set.seed(1234)
+train_indices <- createDataPartition(y = data[["no_show"]],
+                                     times = 1,
+                                     p = training_ratio,
+                                     list = FALSE)
+data_train <- data[train_indices, ]
+data_test <- data[-train_indices, ]
+```
+
+```{r}
+# glmnet model for cross-validation, hold-out set AUCs
+train_control <- trainControl(method = "cv",
+                              number = 10,
+                              classProbs = TRUE,
+                              #verboseIter = TRUE,
+                              summaryFunction = twoClassSummary)
+
+tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
+                         "lambda" = c(0.1, 0.01, 0.001, 0.0001))
+
+set.seed(1234)
+glmnet_model <- train(no_show ~
+                      poly(age, 2) + gender + days_since_scheduled,
+                      data = data_train,
+                      method = "glmnet",
+                      preProcess = c("center", "scale"),
+                      trControl = train_control,
+                      tuneGrid = tune_grid,
+                      metric = "ROC")
+glmnet_model
+```
+
+```{r}
+prediction <- predict.train(glmnet_model, newdata = data_test, type = "prob")
 prediction_sqrt <- sqrt(prediction)
 prediction_sq <- prediction^2
 ```
 
 ## 2.1 Draw ROC curves for all three scores and calculate the AUC. How do they compare? Is it surprising in light of the interpretation of the AUC?
+
+
+```{r}
+# a ggplot version
+# using prediction function from ROCR package
+glmnet_prediction <- prediction(prediction$Yes,
+                              data_test[["no_show"]])
+glmnet_prediction_sqrt <- prediction(prediction_sqrt$Yes,
+                              data_test[["no_show"]])
+#glmnet_prediction_sq <- prediction(prediction_sq$Yes,
+                            #  data_test[["no_show"]])
+
+glm_perf <- performance(glmnet_prediction, measure = "tpr", x.measure = "fpr")
+
+glmnet_roc_prediction_df <- data.table(
+  model = "glmnet_predicion",
+  FPR = glm_perf@x.values[[1]],
+  TPR = glm_perf@y.values[[1]],
+  cutoff = glm_perf@alpha.values[[1]] # cutoff is the treshold
+)
+
+glm_perf_sqrt <- performance(glmnet_prediction_sqrt, measure = "tpr", x.measure = "fpr")
+
+glmnet_roc_prediction__sqrt_df <- data.table(
+  model = "glmnet_prediction_sqrt",
+  FPR = glm_perf_sqrt@x.values[[1]],
+  TPR = glm_perf_sqrt@y.values[[1]],
+  cutoff = glm_perf_sqrt@alpha.values[[1]] # cutoff is the treshold
+)
+
+roc_df <- rbind(glmnet_roc_prediction_df, glmnet_roc_prediction__sqrt_df)
+
+ggplot(roc_df) +
+  geom_line(aes(FPR, TPR, color = model), size = 2) +
+  geom_abline(intercept = 0, slope = 1,  linetype = "dotted", col = "black") +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  xlab("False Positive Rate") + ylab("True Positive Rate") 
+```
+
+```{r}
+glmnet_prediction <- prediction(prediction$Yes,
+                              data_test[["no_show"]])
+
+## using the built-in plot method
+plot(performance(glmnet_prediction, "tpr", "fpr"), colorize=TRUE) 
+```
+
+```{r}
+## calculating AUC = area under the curve -> the measure of predictive power
+AUC <- performance(glmnet_prediction, "auc")@y.values[[1]]
+print(AUC)
+```
+
+```{r}
+glmnet_prediction_sqrt <- prediction(prediction_sqrt$Yes,
+                              data_test[["no_show"]])
+
+## using the built-in plot method
+plot(performance(glmnet_prediction_sqrt, "tpr", "fpr"), colorize=TRUE) 
+```
+
+```{r}
+## calculating AUC = area under the curve -> the measure of predictive power
+AUC <- performance(glmnet_prediction_sqrt, "auc")@y.values[[1]]
+print(AUC)
+```
+
+```{r}
+glmnet_prediction_sq <- prediction(prediction_sq$Yes,
+                              data_test[["no_show"]])
+
+## using the built-in plot method
+plot(performance(glmnet_prediction_sq, "tpr", "fpr"), colorize=TRUE) 
+```
+
+```{r}
+## calculating AUC = area under the curve -> the measure of predictive power
+AUC <- performance(glmnet_prediction_sq, "auc")@y.values[[1]]
+print(AUC)
+```
+
 ## 2.2 What is the key, common property of both the square root and the square functions that leads to this finding?
 ## 2.3 Draw a calibration plot for all three scores separately:
 +group people into bins based on predicted scores
