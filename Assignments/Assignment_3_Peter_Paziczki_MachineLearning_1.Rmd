@@ -1,0 +1,48 @@
+---
+title: "Homework assignment 3"
+subtitle: "Data Science and Machine Learning 1 - CEU 2018"
+author: "Peter Paziczki"
+date: '2018 február 4 '
+output: html_document
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(datasets)
+library(MASS)
+library(ISLR)
+library(caret)
+```
+
+# 1. PCA for supervised learning
+In this problem we are going to analyze the Boston dataset from the MASS package. The goal will be to predict the variable crim which is the crime rate.
+
+```{r}
+data <- data.table(Boston)
+```
+
+## 1.1 Do a short exploration of data and find possible predictors of the target variable.
+
+## 1.2 Create a training and a test set of 50%.
+
+## 1.3 Use a linear regression to predict `crim` and use 10-fold cross validation to assess the predictive power.
+
+## 1.4 Try to improve the model
+
+Try to improve the model by using PCA for dimensionality reduction. Center and scale your variables and use `pcr` to conduct a search for the optimal number of principal components. Does PCA improve the fit over the simple linear model?
+
+## 1.5 Use penalized linear models
+
+Use penalized linear models for the same task. Make sure to include lasso (`alpha = 0`) to your tune grid. How does the best model compare to that found in d)? Would pre-processing via PCA help this model? (add `pca` to `preProcess`). Why do you think the answer can be expected?
+
+## 1.6 Evaluate your preferred model on the test set.
