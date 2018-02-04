@@ -2,7 +2,7 @@
 title: "Homework assignment 2"
 subtitle: "Data Science and Machine Learning 1 - CEU 2018"
 author: "Peter Paziczki"
-date: '2018 február 5'
+date: '2018 február 4'
 output: html_document
 ---
 
@@ -49,7 +49,8 @@ data <- data[ ,c("Timestamp") := NULL]
 ## creating large_countries vector to filter small countries out of the dataset
 data[,.N, by = country]
 large_countries <- data[, .N, by = "country"][N > 10][["country"]]
-data <- data[country %in% large_countries]
+data <- data[, country := ifelse(country %in% large_countries, country, "Other")]
+# data <- data[country %in% large_countries]
 ```
 
 ## 1.1 Explore some predictors that can be used to predict treatment.
@@ -80,23 +81,13 @@ ggplot(data = data_by_gender, aes(x = gender, y = treatment_rate, size = num_obs
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
-I found it to be interesting to assess how the treatment ratio varies across countries. Having all the countries does not make sense, there are several countries with 1 or a bit more observations.
+I found it to be interesting to assess how the treatment ratio varies across countries. Having all the countries does not make sense, there are several countries with 1 or a bit more observations. I have labelled as `Other` the countries that had less than `10` observations. Countries could be good predictors. In France and India only a low portion of employees sought treatment, while in Australia it is the highest.
 
 ```{r}
-data[,.N, by = country]
-
 data_by_country <- data[ ,
   .(treatment_rate = mean(treatment_binary), num_obs = .N),
   keyby = country]
 
-ggplot(data = data_by_country, aes(x = country, y = treatment_rate, size = num_obs)) +
-  geom_point() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-```
-
-I have dropped the countries that had less than `r 10` observations. Now with still having the 91.5% of the observations, the countries left in the data set could be good predictors. In France and India only a low portion of employees sought treatment, while in Australia it is the highest.
-
-```{r}
 large_countries <- data_by_country[num_obs >= 10]
 
 ggplot(data = large_countries, aes(x = country, y = treatment_rate, size = num_obs)) +
@@ -191,7 +182,11 @@ data_train <- data[train_indices, ]
 data_test <- data[-train_indices, ]
 ```
 
-## 1.3 Build models with `glmnet` and `rpart` that predict the binary outcome of `treatment` (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use `metric = "ROC"` in train and also don’t forget to use `classProbs = TRUE, summaryFunction = twoClassSummary` in  trainControl). Make sure to set the same seed before each call to train.
+## 1.3 Build models
+
+Build models with `glmnet` and `rpart` that predict the binary outcome of `treatment` (you don’t have to use all variables if you don’t want to - experiment! Just use the same variables for both model families). Use cross-validation on the training set and use AUC as a selection measure (use `metric = "ROC"` in train and also don’t forget to use `classProbs = TRUE, summaryFunction = twoClassSummary` in  trainControl). Make sure to set the same seed before each call to train.
+
+First I am building a glmnet model using 10-fold cross-validation, the predictors are the ones I found useful and interesting when exploring the data.
 
 ```{r}
 # glmnet model for cross-validation, hold-out set AUCs
@@ -216,7 +211,7 @@ glmnet_model <- train(treatment ~
 glmnet_model
 ```
 
-
+Now I am building a regression tree with settings and predictors.
 
 ```{r}
 tune_grid <- data.frame("cp" = c(0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001))
@@ -233,9 +228,11 @@ rpart_model <- train(treatment ~
 rpart_model
 ```
 
-## 1.4 Compare models based on their predictive performance based on the cross-validation information (you can just use the mean AUC to select the best model).
+## 1.4 Compare models
 
-`glmnet` provided a better performance, a higher ROC value: `0.7448523`, I am picking this model.
+Compare models based on their predictive performance based on the cross-validation information (you can just use the mean AUC to select the best model).
+
+`glmnet` provided a better performance, a higher ROC value, so I am picking this model.
 
 ## 1.5 Evaluate the best model on the test set: draw an ROC curve and calculate and interpret the AUC.
 
@@ -258,7 +255,7 @@ glmnet_prediction <- prediction(test_prediction_glmnet_probs$Yes,
 plot(performance(glmnet_prediction, "tpr", "fpr"), colorize=TRUE) 
 ```
 
-The ROC curve is a two-dimensional plot with false positive rate on the x axis and true positive rate on the y axis. The ROC curve is used to display the previously mentioned values. It can interpreted as displaying the true positive rates for any false positive rates. The higher the true positive rate is, the better the model is.
+The ROC curve is a two-dimensional plot with false positive rate on the x axis and true positive rate on the y axis. The ROC curve is used to display the previously mentioned values. It can be interpreted as displaying the true positive rates for any false positive rate. The higher the true positive rate, the better the model is.
 
 Drawing ROC curve by using ggplot:
 
@@ -283,7 +280,7 @@ ggplot(glm_roc_df) +
   xlab("False Positive Rate") + ylab("True Positive Rate") 
 ```
 
-The dotted line has a slope of 1 and serves as a visual aid, the area under it is 0.5. If classification had been done randomly with true probabilitay, it would have the curve of that.
+The dotted line has a slope of 1 and serves as a visual aid, the area under it is 0.5. If classification had been done randomly with true probabilitay, it would have the curve of that, a 45 degree line to be precise.
 
 Calculating AUC:
 
@@ -307,7 +304,7 @@ test_prediction_glmnet <- predict.train(glmnet_model,
 confusionMatrix(test_prediction_glmnet, test_truth)
 ```
 
-The accuracy shows the share of rightly predicted outcomes with the default threshold of `predict.train` function. It uses a 50% threshold for prediction by default, meaning that if prediction is more than or equal to 0.5, it will be labelled as yes and no otherwise. Running the model with the different thresholds:
+The accuracy shows the share of rightly predicted outcomes with the default threshold of `predict.train` function. It uses a 50% threshold for prediction by default, meaning that if a prediction is more than or equal to 0.5, it will be labelled as yes and no otherwise. Running the model with the different thresholds:
 
 ```{r}
 thresholds <- seq(0.1, 0.95, by = 0.05)
@@ -327,7 +324,7 @@ for (ix in 1:length(thresholds)) {
 } 
 ```
 
-After scannig through a few possible thresholds, 0.4 seems to be the one that gives the most true predictions. The true positive rate is the ratio of true positive predictions and the sum of all positive outcomes, it is `r true_positive_rates[7]`. The false negative rate is the share of false positives in all the negative outcomes, it is `r false_positive_rates[7]`. When having a threshold of 0.4 we have 80 false positives and 31 false negatives.
+After scannig through a few possible thresholds, 0.45 seems to be the one that gives the most true predictions (it is my choice of chossing the approach that best fits my research). The true positive rate is the ratio of true positive predictions and the sum of all positive outcomes, it is `r true_positive_rates[7]`. The false negative rate is the share of false positives in all the negative outcomes, it is `r false_positive_rates[7]`. When having a threshold of 0.45 we have 68 false positives and 34 false negatives.
 
 ```{r}
 true_positive_rates[7]
@@ -393,13 +390,21 @@ data[, scheduled_day := as.Date(scheduled_day)]
 data[, appointment_day := as.Date(appointment_day)]
 data[, days_since_scheduled := as.integer(appointment_day - scheduled_day)]
 data <- data[days_since_scheduled > -1]
+
+data[, days_category := cut(
+  days_since_scheduled, 
+  breaks = c(-1, 0, 1, 2, 5, 10, 30, Inf), 
+  include.lowest = TRUE)]
+
+data[, age_category := cut(age, 
+                           breaks = seq(0, 100, by = 5), 
+                           include.lowest = TRUE)]
 ```
 
-```{r}
-# [... create train and test sets ... ]
+Creating a train and test set, ratio is set to be 0.5.
 
+```{r}
 # set up training and test data
-# model selection will be done via cross-validation
 
 training_ratio <- 0.5 
 set.seed(1234)
@@ -411,6 +416,8 @@ data_train <- data[train_indices, ]
 data_test <- data[-train_indices, ]
 ```
 
+My choice of model is glment with 10-fold cross-validation, using only three predictors to predict `no_show`, `gender`, `age_category` and `days_category`. The last two are arbitrary buckets that I have created. Experiments showed that having the `age` and `days_since_scheduled` grouped into buckets improves the predictive power of the model.
+
 ```{r}
 # glmnet model for cross-validation, hold-out set AUCs
 train_control <- trainControl(method = "cv",
@@ -419,12 +426,20 @@ train_control <- trainControl(method = "cv",
                               #verboseIter = TRUE,
                               summaryFunction = twoClassSummary)
 
-tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
+tune_grid <- expand.grid("alpha" = seq(0.1 , 0.9, 0.1),
                          "lambda" = c(0.1, 0.01, 0.001, 0.0001))
 
 set.seed(1234)
 glmnet_model <- train(no_show ~
-                      poly(age, 2) + gender + days_since_scheduled,
+                      age_category + gender + days_category,
+                        #age +
+                        #days_since_scheduled +
+                        #sms_received +
+                        #handicap +
+                        #diabetes+
+                        #hypertension +
+                        #scholarship +
+                        #alcoholism,
                       data = data_train,
                       method = "glmnet",
                       preProcess = c("center", "scale"),
@@ -432,7 +447,11 @@ glmnet_model <- train(no_show ~
                       tuneGrid = tune_grid,
                       metric = "ROC")
 glmnet_model
+
+test_truth <- data_test[["no_show"]]
 ```
+
+Getting and loading the prediction, then having its squared root and square:
 
 ```{r}
 prediction <- predict.train(glmnet_model, newdata = data_test, type = "prob")
@@ -441,6 +460,8 @@ prediction_sq <- data.frame(prediction^2)
 ```
 
 ## 2.1 Draw ROC curves for all three scores and calculate the AUC. How do they compare? Is it surprising in light of the interpretation of the AUC?
+
+Creating a plot with all three ROC curves displayed on it:
 
 ```{r}
 # a ggplot version
@@ -488,6 +509,8 @@ ggplot(roc_df) +
   scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
   xlab("False Positive Rate") + ylab("True Positive Rate") 
 ```
+
+Creating individual plots for all three predictions:
 
 ```{r}
 glmnet_prediction <- prediction(prediction$Yes,
@@ -538,8 +561,8 @@ All three have the same ROC curve and the same AUC value. As they have the same 
 The ROC curve gives a true positive rate for each false positive rates for different cutoff points. Having the square root or square of *prediction* won't change the curve as the ratio of TPR and FPR won't change and they are to fit in a 1 by 1 scatterplot, they would produce the same curve.
 
 ## 2.3 Draw a calibration plot for all three scores separately:
-+group people into bins based on predicted scores
-+display on a scatterplot the mean of the predicted scores versus the actual share of people surviving
++ group people into bins based on predicted scores
++ display on a scatterplot the mean of the predicted scores versus the actual share of people surviving
 
 ```{r}
 truth_numeric <- ifelse(test_truth == "Yes", 1, 0)
@@ -547,6 +570,8 @@ score_glmnet <- prediction$Yes
 
 summary(score_glmnet)
 ```
+
+Drawing calibration plot for `prediction`:
 
 ```{r}
 actual_vs_predicted <- data.table(actual = truth_numeric,
@@ -567,11 +592,13 @@ ggplot(calibration,
 ```
 
 ```{r}
-truth_numeric <- ifelse(test_truth == "Yes", 1, 0)
+#truth_numeric <- ifelse(test_truth == "Yes", 1, 0)
 score_glmnet <- prediction_sqrt$Yes
 
 summary(score_glmnet)
 ```
+
+Drawing calibration plot for `prediction_sqrt`:
 
 ```{r}
 actual_vs_predicted <- data.table(actual = truth_numeric,
@@ -598,6 +625,8 @@ score_glmnet <- prediction_sq$Yes
 summary(score_glmnet)
 ```
 
+Drawing calibration plot for `prediction_sq`:
+
 ```{r}
 actual_vs_predicted <- data.table(actual = truth_numeric,
                                   predicted = score_glmnet)
@@ -616,6 +645,6 @@ ggplot(calibration,
   ylim(0, 1) + xlim(0, 1)
 ```
 
-+How do they compare? Which score(s) can be regarded as well-calibrated probabilites?
++ How do they compare? Which score(s) can be regarded as well-calibrated probabilites?
 
-???
+The original one seems to be the most well calibrated, the points are quite close to the 45 degree line. In case of the other two where we had the square and square root of the predictions, they both are not well calibrated, the points are quite far from the 45 degree line.
