@@ -25,7 +25,9 @@ library(caret)
 ```
 
 # 1. PCA for supervised learning
-In this problem we are going to analyze the Boston dataset from the MASS package. The goal will be to predict the variable crim which is the crime rate.
+In this problem we are going to analyze the Boston dataset from the MASS package. The goal will be to predict the variable `crim` which is the crime rate.
+
+Loading the data set:
 
 ```{r}
 data <- data.table(Boston)
@@ -33,16 +35,165 @@ data <- data.table(Boston)
 
 ## 1.1 Do a short exploration of data and find possible predictors of the target variable.
 
+Let's see correlations of features and the outcome variable to help quickly putting together a simple benchmark model.
+
+```{r}
+ggcorr(data)
+```
+
+```{r}
+ggpairs(data)
+```
+
 ## 1.2 Create a training and a test set of 50%.
 
+```{r}
+set.seed(1234)
+training_ratio <- 0.5
+train_indices <- createDataPartition(y = data[["crim"]],
+                                     times = 1,
+                                     p = training_ratio,
+                                     list = FALSE)
+data_train <- data[train_indices, ]
+data_test <- data[-train_indices, ]
+```
+
 ## 1.3 Use a linear regression to predict `crim` and use 10-fold cross validation to assess the predictive power.
+
+Based on the above executed exploration and checking how variables are correlated to each other and to `crim`, I decided to predict with `rad` and `lstat`.
+
+```{r}
+set.seed(1234)
+lm_fit <- train(crim ~ 
+                  #zn + 
+                  #indus +
+                  #chas + 
+                  #nox +
+                  #rm +
+                  #age +
+                  #dis +
+                  rad +
+                  tax +
+                  #ptratio +
+                  #black +
+                  lstat,
+                  #medv, 
+                data = data, 
+                method = "lm", 
+                trControl = trainControl(method = "cv", number = 10)
+                #preProcess = c("center", "scale")
+                )
+lm_fit # data was not divided into parts, just wanted to use CV t compare models. If we use the same seed, we can compare models.
+```
 
 ## 1.4 Try to improve the model
 
 Try to improve the model by using PCA for dimensionality reduction. Center and scale your variables and use `pcr` to conduct a search for the optimal number of principal components. Does PCA improve the fit over the simple linear model?
 
+`pcr` is also a linear regression but with principal components as explanatory variables and its hyperparameter is the number of
+components to be used. Now I am doing a `pcr` with a 10-fold cross-validation from hyperparameter 1 to 13.
+
+```{r}
+tune_grid <- data.frame(ncomp = 1:13)
+set.seed(1234)
+pcr_fit <- train(crim ~ . , 
+                data = data, 
+                method = "pcr",
+                trControl = trainControl(method = "cv", number = 10),
+                tuneGrid = tune_grid,
+                preProcess = c("center", "scale")
+                )
+pcr_fit
+```
+
 ## 1.5 Use penalized linear models
 
 Use penalized linear models for the same task. Make sure to include lasso (`alpha = 0`) to your tune grid. How does the best model compare to that found in d)? Would pre-processing via PCA help this model? (add `pca` to `preProcess`). Why do you think the answer can be expected?
 
+```{r}
+train_control <- trainControl(method = "cv",
+                              number = 10)
+
+tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
+                         "lambda" = c(0.1, 0.01, 0.001, 0.0001))
+
+set.seed(1234)
+glmnet_model <- train(crim ~ 
+                  #zn + 
+                  #indus +
+                  #chas + 
+                  #nox +
+                  #rm +
+                  #age +
+                  #dis +
+                  rad +
+                  tax +
+                  #ptratio +
+                  #black +
+                  lstat,
+                  #medv,
+                data = data_train,
+                method = "glmnet",
+                preProcess = c("center", "scale"),
+                trControl = train_control,
+                tuneGrid = tune_grid)
+glmnet_model
+```
+
+Preprocessing
+
+```{r}
+train_control <- trainControl(method = "cv",
+                              number = 10)
+
+tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
+                         "lambda" = c(0.1, 0.01, 0.001, 0.0001))
+
+set.seed(1234)
+glmnet_model <- train(crim ~ 
+                  #zn + 
+                  #indus +
+                  #chas + 
+                  #nox +
+                  #rm +
+                  #age +
+                  #dis +
+                  rad +
+                  tax +
+                  #ptratio +
+                  #black +
+                  lstat,
+                  #medv,
+                data = data_train,
+                method = "glmnet",
+                preProcess = c("center", "scale", "pca"),
+                trControl = train_control,
+                tuneGrid = tune_grid)
+glmnet_model
+```
+
 ## 1.6 Evaluate your preferred model on the test set.
+
+```{r}
+test_prediction <- predict.train(lm_fit, 
+                                        newdata = data_test)
+RMSE <- function(x, true_x) sqrt(mean((x - true_x)^2))
+RMSE(test_prediction, data_test[["crim"]])
+```
+
+# 2. Clustering on the USArrests dataset
+
+In this problem use the `USArrests` dataset we used in class. Your task is to apply clustering then make sense of the clusters using the principal components.
+
+## 2.1 Determine the optimal number of clusters as indicated by `NbClust` heuristics.
+
+## 2.2 Use the k-means method to cluster states using the number of clusters found in a) and anything else that you think that makes sense. Plot observations colored by clusters in the space of urban population and another (crime-related) variable. (See example code from class, use  `factor(km$cluster)` to create a vector of class labels).
+
+## 2.3 Perform PCA and get the first two principal component coordinates for all observations by
+
+```{r}
+pca_result <- prcomp(data, scale. = TRUE)
+first_two_pc <- data.table(pca_result$x[, 1:2])
+```
+
+ˇ## 2.4 Plot clusters in the coordinate system defined by the first two principal components. How do clusters relate to these?
