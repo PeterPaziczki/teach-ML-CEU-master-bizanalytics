@@ -320,3 +320,29 @@ fviz_pca(pca_result, scale = 0)
 ```
 
 We can see that the first principal component captures more variance of the different crimes, while the second principal component captures rather more from the variance of `urbanpop` variable. The negative prefix does not play a role here.
+
+# 3. PCA of high-dimensional data
+
+In this exercise you will perform PCA on 40 observations of 1000 variables. This is very different from what you are used to: there are much more variables than observations! These are measurments of genes of tissues of healthy and diseased patients: the first 20 observations are coming from healthy and the others from diseased patients.
+
+```{r}
+data <- fread("../data/gene_data_from_ISLR_ch_10/gene_data.csv")
+data[, is_diseased := factor(is_diseased)]
+dim(data)
+tail(names(data))
+```
+
+## 2.1 Perform PCA on this data with scaling features.
+
+```{r}
+data_features <- copy(data)
+data_features[, is_diseased := NULL]
+```
+
+# 2.2 Visualize datapoints in the space of the first two principal components (look at the fviz_pca_ind function). What do you see in the figure?
+
+# 2.3 Which individual features can matter the most in separating diseased from healthy? A strategy to answer this can be the following:
++we see that PC1 matters a lot
++so look at which features have high loadings for the first PC, that is, the largest coordinates (in absolute terms). (Hint: use the $rotation). Choose the two features with the largest coordinates and plot observations in the coordinate system defined by these two original features. What do you see?
+
+PCA thus offers a way to summarize vast amounts of variables in a handful of dimensions. This can serve as a tool to pick interesting variables where, for example, visual inspection would be hopeless.
