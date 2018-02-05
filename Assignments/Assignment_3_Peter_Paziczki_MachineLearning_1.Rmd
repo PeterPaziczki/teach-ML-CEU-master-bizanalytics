@@ -22,6 +22,11 @@ library(datasets)
 library(MASS)
 library(ISLR)
 library(caret)
+library(ggplot2)
+library(GGally) # for ggcorr
+library(NbClust)
+library(skimr) # for skim function
+library(factoextra) # for factoextra function
 ```
 
 # 1. PCA for supervised learning
@@ -35,11 +40,15 @@ data <- data.table(Boston)
 
 ## 1.1 Do a short exploration of data and find possible predictors of the target variable.
 
-Let's see correlations of features and the outcome variable to help quickly putting together a simple benchmark model.
+Let's see correlations of features and the outcome variable to help quickly put together a simple benchmark model.
 
 ```{r}
 ggcorr(data)
 ```
+
+`rad`, `tax` and `lstat` seem to be highly correlated to `crim`, but `rad` and `tax` seem to be highly correlated to each other as well, so I am only using `rad` and `lstat`.
+
+Having another plot to have a quick understanding of the data and its features.
 
 ```{r}
 ggpairs(data)
@@ -60,7 +69,7 @@ data_test <- data[-train_indices, ]
 
 ## 1.3 Use a linear regression to predict `crim` and use 10-fold cross validation to assess the predictive power.
 
-Based on the above executed exploration and checking how variables are correlated to each other and to `crim`, I decided to predict with `rad` and `lstat`.
+Based on the above executed exploration and checking how variables are correlated to each other and to `crim`, I decided to predict using `rad` and `lstat` variables.
 
 ```{r}
 set.seed(1234)
@@ -73,31 +82,30 @@ lm_fit <- train(crim ~
                   #age +
                   #dis +
                   rad +
-                  tax +
+                  #tax +
                   #ptratio +
                   #black +
                   lstat,
                   #medv, 
-                data = data, 
+                data = data_train, 
                 method = "lm", 
                 trControl = trainControl(method = "cv", number = 10)
                 #preProcess = c("center", "scale")
                 )
-lm_fit # data was not divided into parts, just wanted to use CV t compare models. If we use the same seed, we can compare models.
+lm_fit
 ```
 
 ## 1.4 Try to improve the model
 
 Try to improve the model by using PCA for dimensionality reduction. Center and scale your variables and use `pcr` to conduct a search for the optimal number of principal components. Does PCA improve the fit over the simple linear model?
 
-`pcr` is also a linear regression but with principal components as explanatory variables and its hyperparameter is the number of
-components to be used. Now I am doing a `pcr` with a 10-fold cross-validation from hyperparameter 1 to 13.
+`pcr` is also a linear regression but with principal components as explanatory variables and its hyperparameter is the number of principal components to be used. Now I am doing a `pcr` with a 10-fold cross-validation with a sequence of hyperparameters 1 to 13.
 
 ```{r}
 tune_grid <- data.frame(ncomp = 1:13)
 set.seed(1234)
 pcr_fit <- train(crim ~ . , 
-                data = data, 
+                data = data_train, 
                 method = "pcr",
                 trControl = trainControl(method = "cv", number = 10),
                 tuneGrid = tune_grid,
@@ -106,15 +114,19 @@ pcr_fit <- train(crim ~ . ,
 pcr_fit
 ```
 
+The analysis gave the lowest RMSE with a hyperparameter of 13, basically using all the variables, but the single linear model gave a lower RMSE than `pcr`.
+
 ## 1.5 Use penalized linear models
 
 Use penalized linear models for the same task. Make sure to include lasso (`alpha = 0`) to your tune grid. How does the best model compare to that found in d)? Would pre-processing via PCA help this model? (add `pca` to `preProcess`). Why do you think the answer can be expected?
+
+Using a penalized linear model with a 10-fold cross-validation and with a sequence of alpha values (lasso and ridge are both considered), but without principal component analysis applied in preprocessing.
 
 ```{r}
 train_control <- trainControl(method = "cv",
                               number = 10)
 
-tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
+tune_grid <- expand.grid("alpha" = seq(0 , 1, 0.1),
                          "lambda" = c(0.1, 0.01, 0.001, 0.0001))
 
 set.seed(1234)
@@ -127,7 +139,7 @@ glmnet_model <- train(crim ~
                   #age +
                   #dis +
                   rad +
-                  tax +
+                  #tax +
                   #ptratio +
                   #black +
                   lstat,
@@ -140,17 +152,19 @@ glmnet_model <- train(crim ~
 glmnet_model
 ```
 
-Preprocessing
+Both simple and pcr linear regression gave higher RMSE than the penalized linear model.
+
+Using the same model as above but this time applying principal component analysis (`pca`) during preprocessing. By default it filters the data to have 95% of the variance, but it can be configured, first let's experiment with the default setting. I would expect to have better results because of using `pca` for prepocessing:
 
 ```{r}
 train_control <- trainControl(method = "cv",
                               number = 10)
 
-tune_grid <- expand.grid("alpha" = seq(0.1 , 1, 0.1),
+tune_grid <- expand.grid("alpha" = seq(0 , 1, 0.1),
                          "lambda" = c(0.1, 0.01, 0.001, 0.0001))
 
 set.seed(1234)
-glmnet_model <- train(crim ~ 
+glmnet_pca_model <- train(crim ~ .,
                   #zn + 
                   #indus +
                   #chas + 
@@ -158,24 +172,61 @@ glmnet_model <- train(crim ~
                   #rm +
                   #age +
                   #dis +
-                  rad +
-                  tax +
+                  #rad +
+                  #tax +
                   #ptratio +
                   #black +
-                  lstat,
+                  #lstat,
                   #medv,
                 data = data_train,
                 method = "glmnet",
                 preProcess = c("center", "scale", "pca"),
                 trControl = train_control,
                 tuneGrid = tune_grid)
-glmnet_model
+glmnet_pca_model
 ```
+
+Experimenting with `pcacomp` set to 8, meaning that I set the model to limit the number of principal components to 8.
+
+```{r}
+train_control <- trainControl(method = "cv",
+                              number = 10,
+                              preProcOptions = list(pcaComp = 8))
+
+tune_grid <- expand.grid("alpha" = seq(0 , 1, 0.1),
+                         "lambda" = c(0.1, 0.01, 0.001, 0.0001))
+
+set.seed(1234)
+glmnet_pca_model_2 <- train(crim ~ .,
+                  #zn + 
+                  #indus +
+                  #chas + 
+                  #nox +
+                  #rm +
+                  #age +
+                  #dis +
+                  #rad +
+                  #tax +
+                  #ptratio +
+                  #black +
+                  #lstat,
+                  #medv,
+                data = data_train,
+                method = "glmnet",
+                preProcess = c("center", "scale", "pca"),
+                trControl = train_control,
+                tuneGrid = tune_grid)
+glmnet_pca_model_2
+```
+
+My overall expectation is that using principal component analysis would provide better results by filtering the noise out.
 
 ## 1.6 Evaluate your preferred model on the test set.
 
+Evaluating the glmnet model on test data.
+
 ```{r}
-test_prediction <- predict.train(lm_fit, 
+test_prediction <- predict.train(glmnet_model, 
                                         newdata = data_test)
 RMSE <- function(x, true_x) sqrt(mean((x - true_x)^2))
 RMSE(test_prediction, data_test[["crim"]])
@@ -185,15 +236,87 @@ RMSE(test_prediction, data_test[["crim"]])
 
 In this problem use the `USArrests` dataset we used in class. Your task is to apply clustering then make sense of the clusters using the principal components.
 
+```{r}
+data <- USArrests
+data <- data.table(data, keep.rownames = TRUE)
+setnames(data, "rn", "state")
+setnames(data, 
+         c("Murder", 
+           "Assault", 
+           "UrbanPop",
+           "Rape"), 
+         c("murder", 
+           "assault", 
+           "urbanpop", 
+           "rape"))
+print(skim(data))
+```
+
 ## 2.1 Determine the optimal number of clusters as indicated by `NbClust` heuristics.
 
+`NbClust` can determine the relevant number of clusters and propose the best clustering scheme from the different results obtained by varying all combinations of number of clusters, distance measures, and clustering methods.
+
+```{r, results="hide"}
+data_features <- data[, .(murder, assault, urbanpop, rape)] # removing state variable and having only the numeric variables
+nb <- NbClust(data_features, method = "kmeans", 
+              min.nc = 2, max.nc = 10, index = "all") # the output to console is the most interesting
+```
+
+```{r}
+fviz_nbclust(nb)
+```
+
+According to the majority rule two or three are the optimal numbers of clusters. Two has been proposed nine times, while three has been proposed six times.
+
 ## 2.2 Use the k-means method to cluster states using the number of clusters found in a) and anything else that you think that makes sense. Plot observations colored by clusters in the space of urban population and another (crime-related) variable. (See example code from class, use  `factor(km$cluster)` to create a vector of class labels).
+
+Plotting observation in the space of urban population and murder with two clusters:
+
+```{r}
+km <- kmeans(data_features, centers = 2)
+data_w_clusters <- cbind(data, 
+                         data.table("cluster" = factor(km$cluster)))
+
+ggplot(data_w_clusters, 
+       aes(x = urbanpop, y = murder, color = cluster)) + 
+  geom_point()
+```
+
+Assault
+
+```{r}
+km <- kmeans(data_features, centers = 2)
+data_w_clusters <- cbind(data, 
+                         data.table("cluster" = factor(km$cluster)))
+
+ggplot(data_w_clusters, 
+       aes(x = urbanpop, y = assault, color = cluster)) + 
+  geom_point()
+```
+
+Rape
+
+```{r}
+km <- kmeans(data_features, centers = 2)
+data_w_clusters <- cbind(data, 
+                         data.table("cluster" = factor(km$cluster)))
+
+ggplot(data_w_clusters, 
+       aes(x = urbanpop, y = rape, color = cluster)) + 
+  geom_point()
+```
 
 ## 2.3 Perform PCA and get the first two principal component coordinates for all observations by
 
 ```{r}
-pca_result <- prcomp(data, scale. = TRUE)
+pca_result <- prcomp(data_features, scale. = TRUE)
 first_two_pc <- data.table(pca_result$x[, 1:2])
 ```
 
-ˇ## 2.4 Plot clusters in the coordinate system defined by the first two principal components. How do clusters relate to these?
+## 2.4 Plot clusters in the coordinate system defined by the first two principal components. How do clusters relate to these?
+
+```{r}
+fviz_pca(pca_result, scale = 0)
+```
+
+We can see that the first principal component captures more variance of the different crimes, while the second principal component captures rather more from the variance of `urbanpop` variable. The negative prefix does not play a role here.
