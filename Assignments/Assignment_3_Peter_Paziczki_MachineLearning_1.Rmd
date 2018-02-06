@@ -273,7 +273,6 @@ According to the majority rule two or three are the optimal numbers of clusters.
 Plotting observation in the space of urban population and murder with two clusters:
 
 ```{r}
-km <- kmeans(data_features, centers = 2)
 data_w_clusters <- cbind(data, 
                          data.table("cluster" = factor(km$cluster)))
 
@@ -282,10 +281,9 @@ ggplot(data_w_clusters,
   geom_point()
 ```
 
-Assault
+Plotting observation in the space of urban population and assault with two clusters:
 
 ```{r}
-km <- kmeans(data_features, centers = 2)
 data_w_clusters <- cbind(data, 
                          data.table("cluster" = factor(km$cluster)))
 
@@ -294,10 +292,9 @@ ggplot(data_w_clusters,
   geom_point()
 ```
 
-Rape
+Plotting observation in the space of urban population and rape with two clusters:
 
 ```{r}
-km <- kmeans(data_features, centers = 2)
 data_w_clusters <- cbind(data, 
                          data.table("cluster" = factor(km$cluster)))
 
@@ -311,9 +308,12 @@ ggplot(data_w_clusters,
 ```{r}
 pca_result <- prcomp(data_features, scale. = TRUE)
 first_two_pc <- data.table(pca_result$x[, 1:2])
+first_two_pc
 ```
 
 ## 2.4 Plot clusters in the coordinate system defined by the first two principal components. How do clusters relate to these?
+
+### 2.4.1 Plotting the observations and four features / variables:
 
 ```{r}
 fviz_pca(pca_result, scale = 0)
@@ -321,9 +321,28 @@ fviz_pca(pca_result, scale = 0)
 
 We can see that the first principal component captures more variance of the different crimes, while the second principal component captures rather more from the variance of `urbanpop` variable. The negative prefix does not play a role here.
 
+### 2.4.2 Plotting the clusters:
+
+In task 2.1 we have used `NbClust` heuristics to find the best number of clusters. Two was chosen by the model using the majority rule. All the results of `NbClust` have been loaded to list named `nb`, and it has an attribute labelling all observations into two cluster. In task 2.3 we have computed the first two principal components of all observation using PCA. Now I only had to pair the cluster labelling with the observations and their first two principal components, please find the plot below:
+
+```{r}
+data_w_clusters <- cbind(first_two_pc, 
+                         data.table("cluster" = factor(nb$Best.partition)))
+
+ggplot(data_w_clusters, 
+       aes(x = PC1, y = PC2, color = cluster)) + 
+  geom_point()
+```
+
+How do clusters relate to these?
+
+???
+
 # 3. PCA of high-dimensional data
 
 In this exercise you will perform PCA on 40 observations of 1000 variables. This is very different from what you are used to: there are much more variables than observations! These are measurments of genes of tissues of healthy and diseased patients: the first 20 observations are coming from healthy and the others from diseased patients.
+
+Loading the data:
 
 ```{r}
 data <- fread("../data/gene_data_from_ISLR_ch_10/gene_data.csv")
@@ -332,17 +351,66 @@ dim(data)
 tail(names(data))
 ```
 
-## 2.1 Perform PCA on this data with scaling features.
+## 3.1 Perform PCA on this data with scaling features.
+
+Excluding the label of being diseased when loading into a data table named `data_features`:
 
 ```{r}
 data_features <- copy(data)
 data_features[, is_diseased := NULL]
+tail(names(data_features))
 ```
 
-# 2.2 Visualize datapoints in the space of the first two principal components (look at the fviz_pca_ind function). What do you see in the figure?
+Performing a principal component analysis on `data_features`:
 
-# 2.3 Which individual features can matter the most in separating diseased from healthy? A strategy to answer this can be the following:
+```{r}
+pca_result <- prcomp(data_features, scale. = TRUE)
+first_two_pc <- data.table(pca_result$x[, 1:2])
+first_two_pc
+```
+
+# 3.2 Visualize datapoints in the space of the first two principal components (look at the fviz_pca_ind function). What do you see in the figure?
+
+Visualizing all the forty observation in the space of the first two principal components:
+
+```{r}
+fviz_pca_ind(pca_result, scale = 0)
+```
+
+We can clearly see that the obsverations are divided into two groups with 20 observations in each group, we can assume that these are the group of healthy and unhealthy tissues.
+
+To check this assumption and results I am creating a plot with using the orinial labeling:
+
+```{r}
+data_w_clusters <- cbind(first_two_pc, 
+                         data.table("cluster" = factor(data$is_diseased)))
+
+ggplot(data_w_clusters, 
+       aes(x = PC1, y = PC2, color = cluster)) + 
+  geom_point()
+```
+
+We can clrearly see that the clusterint was correctly done.
+
+# 3.3 Which individual features can matter the most in separating diseased from healthy? A strategy to answer this can be the following:
 +we see that PC1 matters a lot
-+so look at which features have high loadings for the first PC, that is, the largest coordinates (in absolute terms). (Hint: use the $rotation). Choose the two features with the largest coordinates and plot observations in the coordinate system defined by these two original features. What do you see?
++so look at which features have high loadings for the first PC, that is, the largest coordinates (in absolute terms). (Hint: use the $rotation).
+
+Loading the feature names and corresponding values of variance captured by the first principal component, ordering it in a decreasing fashion and printing the largest five (considering absolute values):
+
+```{r}
+first_pc <- cbind(feature = names(data_features), data.table(abs(pca_result$rotation[,1])))
+first_pc[order(V1, decreasing = TRUE)][1:5,]
+```
+
+Choose the two features with the largest coordinates and plot observations in the coordinate system defined by these two original features. What do you see?
+
+```{r}
+ggplot(data_features, 
+       aes(x = measure_502, y = measure_589)) + 
+  geom_point()
+```
+
+There seems to be a (perhaps linear and quadratic) relationship between the two variables.
 
 PCA thus offers a way to summarize vast amounts of variables in a handful of dimensions. This can serve as a tool to pick interesting variables where, for example, visual inspection would be hopeless.
