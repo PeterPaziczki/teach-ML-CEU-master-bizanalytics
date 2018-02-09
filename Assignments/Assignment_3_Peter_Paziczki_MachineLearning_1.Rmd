@@ -273,6 +273,7 @@ According to the majority rule two or three are the optimal numbers of clusters.
 Plotting observation in the space of urban population and murder with two clusters:
 
 ```{r}
+km <- kmeans(data_features, centers = 2)
 data_w_clusters <- cbind(data, 
                          data.table("cluster" = factor(km$cluster)))
 
