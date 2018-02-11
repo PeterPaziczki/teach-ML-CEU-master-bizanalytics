@@ -2,7 +2,7 @@
 title: "Homework assignment 3"
 subtitle: "Data Science and Machine Learning 1 - CEU 2018"
 author: "Peter Paziczki"
-date: '2018 február 4 '
+date: '2018 február 11'
 output: html_document
 ---
 
@@ -324,7 +324,7 @@ We can see that the first principal component captures more variance of the diff
 
 ### 2.4.2 Plotting the clusters:
 
-In task 2.1 we have used `NbClust` heuristics to find the best number of clusters. Two was chosen by the model using the majority rule. All the results of `NbClust` have been loaded to list named `nb`, and it has an attribute labelling all observations into two cluster. In task 2.3 we have computed the first two principal components of all observation using PCA. Now I only had to pair the cluster labelling with the observations and their first two principal components, please find the plot below:
+In task 2.1 we have used `NbClust` heuristics to find the best number of clusters. Two was chosen by the model using the majority rule. All the results of `NbClust` have been loaded to list named `nb`, and it has an attribute labelling all observations into two clusters. In task 2.3 we have computed the first two principal components of all observation using PCA. Now I only had to pair the cluster labelling with the observations and their first two principal components, please find the plot below:
 
 ```{r}
 data_w_clusters <- cbind(first_two_pc, 
@@ -337,7 +337,7 @@ ggplot(data_w_clusters,
 
 How do clusters relate to these?
 
-???
+PC1 seems to able to differentiate between clusters for most of the observations.
 
 # 3. PCA of high-dimensional data
 
@@ -412,6 +412,6 @@ ggplot(data_features,
   geom_point()
 ```
 
-There seems to be a (perhaps linear and quadratic) relationship between the two variables.
+There seems to be a (perhaps linear and quadratic) relationship between the two variables, they seem to be correlated to each other, which is not surprising at all. These two features have the highest loading in the same principle component (PC1), they being correlated to each other is not suprising.
 
 PCA thus offers a way to summarize vast amounts of variables in a handful of dimensions. This can serve as a tool to pick interesting variables where, for example, visual inspection would be hopeless.
