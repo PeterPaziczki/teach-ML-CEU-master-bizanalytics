@@ -498,4 +498,52 @@ plot(varImp(rf_model_mtry_10))
 + shrinkage = 0.1
 + n.minobsinnode = 5
 
+```{r}
+# gradient boosting machines
+gbm_grid <- expand.grid(n.trees = 500, # number of trees to build
+                        interaction.depth = 5, # how large trees I want to use, the larger, the more complex individual trees I have
+                        shrinkage = 0.1, # the smaller the shrinkage, the less I take the model fitted to residuals into account
+                        #bag.fraction = 0.1,
+                        n.minobsinnode = 5) # a threshold for obs in a node
+
+set.seed(20180311)
+gbm_model <- train(log_salary ~ .,
+                   method = "gbm",
+                   data = data,
+                   trControl = train_control,
+                   tuneGrid = gbm_grid,
+                   bag.fraction = 0.1,
+                   verbose = FALSE
+                   )
+gbm_model
+```
+
+```{r}
+# gradient boosting machines
+gbm_grid <- expand.grid(n.trees = 500, # number of trees to build
+                        interaction.depth = 5, # how large trees I want to use, the larger, the more complex individual trees I have
+                        shrinkage = 0.1, # the smaller the shrinkage, the less I take the model fitted to residuals into account
+                        #bag.fraction = 0.1,
+                        n.minobsinnode = 5) # a threshold for obs in a node
+
+set.seed(20180311)
+gbm_model_2 <- train(log_salary ~ .,
+                   method = "gbm",
+                   data = data,
+                   trControl = train_control,
+                   tuneGrid = gbm_grid,
+                   bag.fraction = 0.9,
+                   verbose = FALSE
+                   )
+gbm_model_2
+```
+
 Compare variable importance plots for the two models. What is the meaning of bag.fraction? Based on this, why is one variable importance profile more extreme than the other?
+
+```{r}
+plot(varImp(gbm_model))
+```
+
+```{r}
+plot(varImp(gbm_model_2))
+```
