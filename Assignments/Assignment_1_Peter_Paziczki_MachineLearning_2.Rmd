@@ -456,6 +456,40 @@ data[, Salary := NULL]
 
 ### 3.1 train two random forest models: one with mtry = 2 and another with mtry = 10 (use the whole dataset and don’t use cross-validation). Inspect variable importance profiles. What do you see in terms of how important the first few variables are relative to each other?
 
+```{r}
+train_control <- trainControl()
+
+set.seed(20180311)
+rf_model_mtry_2 <- train(log_salary ~ .,
+                  method = "rf",
+                  data = data,
+                  trControl = train_control,
+                  tuneGrid = data.frame(mtry = 2),
+                  #ntree = 10,
+                  importance = T) # to calculate variable importance measures
+rf_model_mtry_2
+```
+
+```{r}
+set.seed(20180311)
+rf_model_mtry_10 <- train(log_salary ~ .,
+                  method = "rf",
+                  data = data,
+                  trControl = train_control,
+                  tuneGrid = data.frame(mtry = 10),
+                  #ntree = 10,
+                  importance = T) # to calculate variable importance measures
+rf_model_mtry_10
+```
+
+```{r}
+plot(varImp(rf_model_mtry_2))
+```
+
+```{r}
+plot(varImp(rf_model_mtry_10))
+```
+
 ### 3.2 One of them is more extreme in terms of how the most important and the next ones relate to each other. Give an intuitive explanation how  mtry relates to relative importance of variables in random forest models.
 
 ### 3.3 In the same vein, estimate two gbm models and set bag.fraction to 0.1 first and to 0.9 in the second. The tuneGrid should consist of the same values for the two models (a dataframe with one row):
