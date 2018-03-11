@@ -1,0 +1,467 @@
+---
+title: "Homework assignment 1"
+subtitle: "Data Science and Machine Learning 2 - CEU 2018"
+author: "Peter Paziczki"
+date: '2018 március 18'
+output: html_document
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(xgboost)
+library(randomForest)
+library(gbm)
+library(ISLR)
+library(skimr) # for skim function
+library(ROCR)
+```
+
+## 1. Classification tree model
+
+In this problem I am going to work with the OJ dataset from the ISLR package. This dataset records purchases of two types of orange juices and presents customer and product characteristics as features. My goal is to predict which of the juices is chosen in a given purchase situation.
+
+Loading the data set and having additional information about the data-set, histogram of variables, etc.:
+
+```{r}
+data <- data.table(OJ)
+
+#'?ISLR::OJ
+str(data)
+skim(data)
+
+table(data$Purchase)
+#table(data$STORE)
+#table(data$StoreID)
+```
+
+We are going to predict the `Purchase` binary variable, it can be eitehr `CH` or `MM`, with a ratio of 61 and 39%, respectively. We have 17 variables that we can use for prediction.
+
+### 1.1 Creating a training data-set with 75% off all observations and keeping the remaining 25% as a test set.
+
+```{r}
+training_ratio <- 0.75 
+set.seed(20180311)
+train_indices <- createDataPartition(y = data[["Purchase"]],
+                                     times = 1,
+                                     p = training_ratio,
+                                     list = FALSE)
+data_train <- data[train_indices, ]
+data_test <- data[-train_indices, ]
+```
+
+### 1.2 Build a classification tree, determining the optimal complexity parameter via 10-fold cross validation.
+
+I am going to use the `rpart` package to build the classification tree to predict the outcome of the purchase. I am considering all the variables and using 10-fold cross-validation, repeated 3 times.
+
++ Use values for the complexity parameter ranging between 0.001 and 0.1.
+
+By setting the complexity parameter we can set what is the minimum reduction in RMSE that a split needs make. The higher the `cp`, the less splits will be made.
+
++ the selection criterion should be based on AUC
+
+The rule to choose the final model can be set, in this section I am going to build a model with 10-fol cross-validation repeated 3 times and with a selection criteria chossing the model with the highest AUC (area under the ROC curve).
+
+```{r}
+train_control <- trainControl(method = "repeatedcv",
+                              number = 10,
+                              repeats = 3,
+                              classProbs = TRUE, # needs to be set to TRUE because I am looking for binary probabilities
+                              summaryFunction = twoClassSummary)
+
+set.seed(20180311)
+simple_tree_model_AUC <- train(Purchase ~ .,
+                      method = "rpart",
+                      data = data_train,
+                      #tuneGrid = data.frame(cp = c(0.001, 0.005, 0.01, 0.05, 0.1)),
+                      tuneGrid = data.frame(cp = seq(0.001, 0.1, 0.001)),
+                      trControl = train_control,
+                      metric = "ROC")
+simple_tree_model_AUC
+```
+
++ Use the “one standard error” rule to select the final model
+
+I am building a model with the same parameters as before, the selection is still based on the AUC, but this time the rule of `oneSE` is also considered (rule of one standard error). It is going to take the simplest (most regularized) model whose error is within one standard error of the minimal error. The final model is chosen by applying the before mentioned rule.
+
+```{r}
+train_control <- trainControl(method = "repeatedcv",
+                              number = 10,
+                              repeats = 3,
+                              classProbs = TRUE, # means i am looking for binary probabilities
+                              summaryFunction = twoClassSummary,
+                              selectionFunction = "oneSE")
+
+set.seed(20180311)
+simple_tree_model <- train(Purchase ~ .,
+                      method = "rpart",
+                      data = data_train,
+                      #tuneGrid = data.frame(cp = c(0.001, 0.005, 0.01, 0.05, 0.1)),
+                      tuneGrid = data.frame(cp = seq(0.001, 0.1, 0.001)),
+                      trControl = train_control,
+                      metric = "ROC")
+simple_tree_model
+```
+
+### 1.3 Plot the final model and interpret the result. How would you predict a new observation?
+
+I am using the `rpart.plot` function to plot the final model. There are multiple splits and the plot shows us by what variables the split were made, what were the thresholds at these splits.
+
+As an exaple I interpret the first node. It shows the predicted class, in case of the first node it is CH. It is not suprising, as the 61% of observations are labelled with CH and the majority rule is applied. The second piece of information is probability of being MM instead of CH, it is 39% in this case. The last line shows what percentage of observations are in that specific node, in this case it is 100%, as the observations have not been split yet.
+
+`LoyalCH` variable was chosen for the first cut. If the value of `LoyalCH` were less than 0.51, the prediction were `MM`, if equal or more than 0.51, it were classified as `CH`.
+
+```{r}
+rpart.plot(simple_tree_model_AUC[["finalModel"]], tweak=1.75)
+```
+
+### 1.4 Evaluate the final model on the test set. Is the AUC close to what we got via cross-validation?
+
+Calculating AUC:
+
+```{r}
+## evaluating the classification tree model on test-set
+test_prediction_probs <- predict.train(simple_tree_model, 
+                                        newdata = data_test, 
+                                        type = "prob") # obtaining probabilities instead of binary predictions
+
+# drawing the ROC curve by using the built-in plot method:
+simple_tree_prediction <- prediction(test_prediction_probs$MM,
+                              data_test[["Purchase"]])
+
+# calculating AUC = area under the curve -> the measure of predictive power
+AUC <- performance(simple_tree_prediction, "auc")@y.values[[1]]
+print(AUC)
+
+```
+
+AUC stands for *Area under the curve*, it is practically the integral of ROC curve, the higher the value, the better the prediction is. It is a model independent way to assess the predictive performance of the model. In this case `AUC = 0.8843499` is very close to what we got via cross-validation and is actually slightly higher.
+
+The ROC curve is a two-dimensional plot with false positive rate on the x axis and true positive rate on the y axis. It can be interpreted as displaying the true positive rates for any false positive rate. The higher the true positive rate, the better the model is.
+
+The ROC curve drawn by built-in function:
+
+```{r}
+## using the built-in plot method
+plot(performance(simple_tree_prediction, "tpr", "fpr"), colorize=TRUE) 
+```
+
+The ROC curve drawn by `ggplot` package:
+
+```{r}
+simple_tree_perf <- performance(simple_tree_prediction, measure = "tpr", x.measure = "fpr")
+
+simple_tree_roc_df <- data.table(
+  model = "rpart",
+  FPR = simple_tree_perf@x.values[[1]],
+  TPR = simple_tree_perf@y.values[[1]],
+  cutoff = simple_tree_perf@alpha.values[[1]] # cutoff is the treshold
+)
+
+ggplot(simple_tree_roc_df) +
+  geom_line(aes(FPR, TPR, color = cutoff), size = 2) +
+  geom_ribbon(aes(FPR, ymin = 0, ymax = TPR), fill = "blue", alpha = 0.1) +
+  geom_abline(intercept = 0, slope = 1,  linetype = "dotted", col = "black") +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  xlab("False Positive Rate") + ylab("True Positive Rate") 
+```
+
+Confusion matrix done on the test-set
+
+```{r}
+test_prediction <- predict.train(simple_tree_model, 
+                                        newdata = data_test)
+#test_prediction
+
+test_truth <- data_test[["Purchase"]]
+confusionMatrix(test_prediction, test_truth)
+```
+
+
+## 2. Tree ensemble models
+
+In this exercise for the same problem analyzed in Problem 1, we are investigating tree ensemble models and trying various tuning parameter combinations. At the end the best model is to be selected by using cross-validation but not considering the `oneSE` rule.
+
+The models are built via 10-fold cross-validation repeated 3 times.
+
+### 2.1 Random forest with 10 trees `rf_model_ntree_10`
+
+The number of trees to build is not a tuning parameter in `caret`. the default value is 500. For the first try I set the number of trees to build to 10 (`ntree = 10`). The number of randomly chosen features to use when doing a split can be also set by `mtry`, first I am trying with 2, 3 and 5.
+
+```{r}
+train_control <- trainControl(method = "repeatedcv",
+                              number = 10,
+                              repeats = 3,
+                              summaryFunction = twoClassSummary,
+                              classProbs = TRUE)
+
+set.seed(20180311)
+rf_model_ntree_10 <- train(Purchase ~ .,
+                  method = "rf",
+                  data = data_train,
+                  trControl = train_control,
+                  tuneGrid = data.frame(mtry = c(2, 3, 5)),
+                  ntree = 10,
+                  importance = T, # to calculate variable importance measures
+                  metric = "ROC")
+rf_model_ntree_10
+```
+
+### 2.2 Random forest with 500 trees `rf_model`
+
+Now I am building a random forest with the default setting, with 500 trees and setting `mtry` to a sequence of numbers but still not setting it to 17.
+
+```{r}
+# random forest
+set.seed(20180311)
+rf_model <- train(Purchase ~ .,
+                  method = "rf",
+                  data = data_train,
+                  trControl = train_control,
+                  tuneGrid = data.frame(mtry = c(2, 3, 5, 8, 13)),
+                  importance = T, # to calculate variable importance measures
+                  metric = "ROC")
+# random forest has two parameters: number of trees to build (default is 500) and number of features to randomly use (mtry)
+# in this example we have 19 features, so running random forest with all the features is bagging (boostrap aggregating)
+rf_model
+```
+
+### 2.3 Random forest with bagging `rf_model_bagging`
+
+When setting `mtry` to the number of features available, it is called bagging, bootstrap aggregating.
+
+```{r}
+# random forest with bagging
+set.seed(20180311)
+rf_model_bagging <- train(Purchase ~ .,
+                  method = "rf",
+                  data = data_train,
+                  trControl = train_control,
+                  tuneGrid = data.frame(mtry = 17),
+                  importance = T, # to calculate variable importance measures
+                  metric = "ROC")
+rf_model_bagging
+```
+
+### 2.4 Gradient boosting machines `gbm_model`
+
+We are also building many trees here, in that sense it is qutie similar to random forest. The difference between random forest and gradient boosting is that gradiant boosting machines do not necessarily need to be trees, they can be something else. The way of combining trees is also different, because we are looking at the residuals and trying to explain that. It works sequentally, meaning, that first we build a tree, compute the residuals, then build a model on residuals too, then repeat it so on.
+
+Shrinkage is also used by the lambda shrinkage parameter, which serves the purpose of regularization. It determines how much I am going take the model fitted on residuals into account.
+
+This model can be very computationally extensive, it has many tuning parameters:
++ number of trees to build,
++ depth of trees to build,
++ shrinkage parameter and
++ minimum number of observations in a node.
+
+```{r}
+# gradient boosting machines
+gbm_grid <- expand.grid(n.trees = c(100, 500, 1000), # number of trees to build
+                        interaction.depth = c(2, 3, 5), # how large trees I want to use, the larger, the more complex individual trees I have
+                        shrinkage = c(0.005, 0.01, 0.1), # the smaller the shrinkage, the less I take the model fitted to residuals into account
+                        n.minobsinnode = c(5)) # a threshold for obs in a node
+
+set.seed(20180311)
+gbm_model <- train(Purchase ~ .,
+                   method = "gbm",
+                   data = data_train,
+                   trControl = train_control,
+                   tuneGrid = gbm_grid,
+                   verbose = FALSE,
+                   metric = "ROC"
+                   )
+gbm_model
+```
+
+### 2.5 Gradient boosting machines `gbm_model_2`
+
+```{r}
+gbm_grid_2 <- data.frame(n.trees = c(1000), 
+                         interaction.depth = c(5), 
+                         shrinkage = c(0.005),
+                         n.minobsinnode = c(5))
+  
+gbm_model_2 <- train(Purchase ~ .,
+                   method = "gbm",
+                   data = data_train,
+                   trControl = train_control,
+                   tuneGrid = gbm_grid_2,
+                   bag.fraction = 0.8,
+                   verbose = FALSE, # gbm by default prints too much output
+                   metric = "ROC"
+                   )
+gbm_model_2
+```
+
+### 2.6 XGBoost `xgboost_model`
+
+It is a gradient boosting algorithm (using more tricks and regularization). The original gradient boosting algorithm has been further mastered. It is very robust and can be faster and accessed via `caret`. Tuning parameters are basically the same but have different names, such as:
++ `nrounds` - number of trees to build,
++ `max_depth` - same `interaction.depth`,
++ `eta` - shrinkage parameter,
++ `gamma` - complexity parameter,
++ `min_child_weight` - minimum number of observation in final nodes.
+
+```{r}
+# xgboost
+xgbGrid <- expand.grid(nrounds = c(500, 1000), # number of trees = n.trees
+                       max_depth = c(2, 3, 5), # interaction.depth
+                       eta = c(0.01, 0.05), # shrinkage parameter
+                       gamma = 0, # complexity parameter
+                       colsample_bytree = c(0.5, 0.7),
+                       min_child_weight = 1, # number of obs in final nodes
+                       subsample = c(0.5)) # similar to bag parameter to GBM, 
+
+set.seed(20180311)
+xgboost_model <- train(Purchase ~ .,
+                       method = "xgbTree",
+                       data = data_train,
+                       trControl = train_control,
+                       tuneGrid = xgbGrid)
+xgboost_model
+```
+
+### 2.2 Compare different models with the resamples function (make sure to set the same seed before model training for all 3 models). Is any of these giving significantly different predictive power than the others?
+
+```{r}
+resamples_object <- resamples(list("rpart_AUC" = simple_tree_model_AUC,
+                                   "rpart_oneSE" = simple_tree_model,
+                                   "rf_ntree_10" = rf_model_ntree_10,
+                                   "rf" = rf_model,
+                                   "rf_bagging" = rf_model_bagging,
+                                   "gbm" = gbm_model,
+                                   "gbm_2" = gbm_model_2,
+                                   "xgboost" = xgboost_model))
+summary(resamples_object)
+```
+
+Classification trees gave the lowest ROC values on average. Random forest models yielded slightly better results, but gradient boosting machines and XGBoost outperformed them. GMB and XGBoost had the best results, but they were computationally very intensive, needed significantly more time to compute.
+
+### 2.7 Choose the best model and plot ROC curve for the best model on the test set. Calculate and interpret AUC.
+
+The best model by lookint at the highest mean of ROC is `gbm_model`.
+
+Calculating AUC:
+
+```{r}
+## evaluating the classification tree model on test-set
+test_prediction_probs <- predict.train(gbm_model, 
+                                        newdata = data_test, 
+                                        type = "prob") # obtaining probabilities instead of binary predictions
+
+# drawing the ROC curve by using the built-in plot method:
+best_model_prediction <- prediction(test_prediction_probs$MM,
+                              data_test[["Purchase"]])
+
+# calculating AUC = area under the curve -> the measure of predictive power
+AUC <- performance(best_model_prediction, "auc")@y.values[[1]]
+print(AUC)
+
+```
+
+In this case the AUC is `0.8864736`, it is very close to the ROC with the training set.
+
+The ROC curve drawn by built-in function:
+
+```{r}
+## using the built-in plot method
+plot(performance(best_model_prediction, "tpr", "fpr"), colorize=TRUE) 
+```
+
+The ROC curve drawn by `ggplot` package:
+
+```{r}
+best_model_perf <- performance(best_model_prediction, measure = "tpr", x.measure = "fpr")
+
+best_model_roc_df <- data.table(
+  model = "gbm_model",
+  FPR = best_model_perf@x.values[[1]],
+  TPR = best_model_perf@y.values[[1]],
+  cutoff = best_model_perf@alpha.values[[1]] # cutoff is the treshold
+)
+
+ggplot(best_model_roc_df) +
+  geom_line(aes(FPR, TPR, color = cutoff), size = 2) +
+  geom_ribbon(aes(FPR, ymin = 0, ymax = TPR), fill = "blue", alpha = 0.1) +
+  geom_abline(intercept = 0, slope = 1,  linetype = "dotted", col = "black") +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, .1)) +
+  xlab("False Positive Rate") + ylab("True Positive Rate") 
+```
+
+### 2.8 Inspect variable importance plots for the 3 models. Are similar variables found to be the most important for the 3 models?
+
+Variable importance measures can help to see which features contribute the most to the predictive power of our models. Please find a variable importance plot for `rf_model_ntree_10` model below:
+
+```{r}
+plot(varImp(rf_model_ntree_10))
+```
+
+Variable importance plot for `rf_model` model below:
+
+```{r}
+plot(varImp(rf_model))
+```
+
+Variable importance plot for `rf_model_bagging` model below:
+
+```{r}
+plot(varImp(rf_model_bagging))
+```
+
+Variable importance plot for `gbm_model` model below:
+
+```{r}
+plot(varImp(gbm_model))
+```
+
+Variable importance plot for `xgboost_model` model below:
+
+```{r}
+plot(varImp(xgboost_model))
+```
+
+**Different random forest models:**
+
+Random forest found `LoyalCH` to be the most important variable in case of all three differrent random forest models. But the second and third most important variables are not the same across the random forest models. The reason for it is that when running random forest we intentionally constrain the algorithm to randomly consider only a limited number of features. Thus, by chance, we can have different variable improtance plots.
+
+**Random forest with bagging, Gradient boosting machine and xgboost:**
+
+Random forest with bagging, gradient boosting machine and xgboost turned out to have the same three variables as the most important ones: `LoyalCH`, `PriceDiff` and `ListPriceDiff`, in this order in all three cases. (In case of bagging we let the algorithm to consider all the features.)
+
+## 3. Variable importance profiles
+
+Using the Hitters dataset and predicting `log_salary`.
+
+```{r}
+data <- data.table(Hitters)
+data <- data[!is.na(Salary)]
+data[, log_salary := log(Salary)]
+data[, Salary := NULL]
+```
+
+### 3.1 train two random forest models: one with mtry = 2 and another with mtry = 10 (use the whole dataset and don’t use cross-validation). Inspect variable importance profiles. What do you see in terms of how important the first few variables are relative to each other?
+
+### 3.2 One of them is more extreme in terms of how the most important and the next ones relate to each other. Give an intuitive explanation how  mtry relates to relative importance of variables in random forest models.
+
+### 3.3 In the same vein, estimate two gbm models and set bag.fraction to 0.1 first and to 0.9 in the second. The tuneGrid should consist of the same values for the two models (a dataframe with one row):
++ n.trees = 500
++ interaction.depth = 5
++ shrinkage = 0.1
++ n.minobsinnode = 5
+
+Compare variable importance plots for the two models. What is the meaning of bag.fraction? Based on this, why is one variable importance profile more extreme than the other?
