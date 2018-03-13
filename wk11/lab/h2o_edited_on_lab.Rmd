@@ -1,0 +1,224 @@
+---
+title: "Lab week 11 - h2o"
+subtitle: "Data Science and Machine Learning 2 - CEU 2018"
+author: "Jeno Pal"
+date: '2018-03-13'
+output:
+  html_document:
+    df_print: paged
+  html_notebook:
+    df_print: paged
+---
+
+H2O: state-of-the-art machine learning software that is even
+suitable for big datasets. 
+It offers very efficient and scalable implementations of 
+popular ML algorithms that can 
+
+* run on distributed systems
+* utilize multiple cores
+* work with GPUs
+
+Models estimated with h2o can be deployed to production environments
+through Java objects (see [here](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/productionizing.html)).
+Also, h2o scales well compared to other competitor implementations
+(see Szilard Pafka's famous benchmarks [here](https://github.com/szilard/benchm-ml)).
+
+In general, best resource to learn is the
+[documentation](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/welcome.html) and many
+tutorials are available on YouTube.
+
+```{r}
+library(data.table)
+library(ISLR)
+library(ggplot2)
+
+library(h2o)
+h2o.init()
+# h2o uses the same algorithms that we have learned before, but doing it in a smarter and more efficient way
+# it can use the processors of the GPUs, does not do it by default it, but I can set it to do that
+# it is very good especially with large datasets, see Szilárd's github page above
+# everything is implemented in java, so it runs a java virtual machine
+# it has one node only now, because it is running only on my machine
+# i can increase the memory
+
+# everything is happenning on my computer now !!!
+
+# http://localhost:54321/flow/index.html
+```
+
+```{r}
+# stop it via h2o.shutdown()
+```
+
+```{r}
+data <- data.table(Wage)
+skimr::skim(data)
+```
+
+```{r}
+data[, c("region","wage") := NULL] # we want to predict log wage, so dropping wage
+# for data manipulation with h2o is not so great, it is better to manipulate data first with data table or whatever, then
+# turning it into a h2o frame
+h2o_data <- as.h2o(data) # it is not a data frame, similar, but not the same, it is an h2o frame
+str(h2o_data)
+```
+
+```{r}
+# splitting data into three parts, train, validation and test, it creates lists
+splitted_data <- h2o.splitFrame(h2o_data, 
+                                ratios = c(0.6, 0.2), # first part 60%, second 20%, third has the rest
+                                seed = 123)
+
+nrow(data_train)
+nrow(data_valid)
+nrow(data_test)
+
+data_train <- splitted_data[[1]]
+data_valid <- splitted_data[[2]]
+data_test <- splitted_data[[3]]
+```
+
+GLM: __penalized__ linear regression methods.
+```{r}
+y <- "logwage"  # outcome variable's name
+X <- setdiff(names(h2o_data), c(y, "year")) # a base R function
+# taking all the columns of h2o data except the year column
+# it is a character vector with all the features i want to use
+
+glm_fit <- h2o.glm(X, y, # running old logistic regression, it is a penalized model here, x - features, y - outcome
+               training_frame = data_train, # the data used for training
+               alpha = 0, # alpha can be between 0 (Ridge) and 1 (Lasso), tells is whether it is lasso or ridge or anything in between
+               nfolds = 5, # specifying cross-validation (5-fold in this case)
+               seed = 123)
+
+# xval stands for 'cross-validation'
+print(h2o.performance(glm_fit, xval = TRUE)) # xval = TRUE asks whether it needs to report metrics or not, without it i can ask for training error
+# RMSE is the average of the five models estimated via 5-fold cross-validation
+```
+
+```{r}
+print(h2o.rmse(glm_fit, xval = TRUE)) # giving RMSE coming from the CV above
+```
+
+You can perform a grid search with cross-validation to tune hyperparamters.
+```{r}
+# let's do hyperparameter tuning
+hyper_params <- list(alpha = c(0, .25, .5, .75, 1)) # exploring ridge, lasso and models in between
+
+# build grid search with previously selected hyperparameters
+glm_grid <- h2o.grid(x = X, # it is a grid search, that is the reason for calling it grid ...
+                     y = y, 
+                     training_frame = data_train, 
+                     algorithm = "glm", # it could be set to any other algorithm
+                     lambda_search = TRUE, # penalized linear models have two parameters in caret, alpha and lambda
+                                           #here lambda is a way to ask h2o to find a good lamdba value
+                     # grid_id = "my_glm_grid" - it is a way to name my grid, but shouldn't do it,
+                     # because after naming i won't be able to update it anymore
+                     nfolds = 5, # 5-fold CV
+                     seed = 123,
+                     hyper_params = hyper_params)
+h2o.getGrid(grid_id = glm_grid@grid_id, sort_by = "rmse", decreasing = FALSE)
+# i need to give which grid to evaluate, but here it is not enough to say glm_grid, i need to refer to the id of the grid
+str(glm_grid)
+
+# the grid id:
+glm_grid@grid_id
+
+# after referring to the grid_id, I need to tell to sort the results by RMSE in a decreasing fashion
+# it ranks the models, 0.25 was the best performing
+
+# http://docs.h2o.ai/h2o/latest-stable/h2o-docs/data-science.html
+```
+
+Random Forests are there for you to use as well.
+```{r}
+# random forests
+rf_params <- list(ntrees = c(500), # number of trees to estimate
+                  mtries = c(2, 3, 5))
+
+rf_grid <- h2o.grid(x = X, 
+                    y = y, 
+                    training_frame = data_train, 
+                    algorithm = "randomForest", 
+                    nfolds = 5,
+                    seed = 123,
+                    hyper_params = rf_params)
+
+h2o.getGrid(grid_id = rf_grid@grid_id, sort_by = "rmse", decreasing = FALSE)
+```
+
+Just like GBMs.
+
+```{r}
+# GBM hyperparamters
+gbm_params <- list(learn_rate = c(0.01, 0.05), # shrinkage parameter, the lower the value the smaller steps tha algo takes
+                    max_depth = c(2, 3, 5), # complexity of the trees
+                    sample_rate = c(0.5), # using only half of the data to estimate trees
+                    col_sample_rate = c(0.5, 1.0)) # constraining the features to build trees
+# Train and validate a cartesian grid of GBMs
+gbm_grid <- h2o.grid(x = X, 
+                     y = y, 
+                     training_frame = data_train, 
+                     algorithm = "gbm", 
+                     nfolds = 5,
+                     seed = 123,
+                     ntrees = 300,
+                     hyper_params = gbm_params)
+
+h2o.getGrid(gbm_grid@grid_id, sort_by = "rmse", decreasing = FALSE)
+```
+
+```{r}
+# get best models
+glm_model <- h2o.getModel(h2o.getGrid(glm_grid@grid_id)@model_ids[[1]]) # getting the grid id, then getting the model
+# need to choose the first model, because models are sorted by RMSE in a decreasing fashion, so the first one is the best performing model
+rf_model <- h2o.getModel(h2o.getGrid(rf_grid@grid_id)@model_ids[[1]])
+gbm_model <- h2o.getModel(h2o.getGrid(gbm_grid@grid_id)@model_ids[[1]])
+
+# predict on validation set
+validation_performances <- list(
+  "glm" = h2o.rmse(h2o.performance(glm_model, newdata = data_valid)),
+  "rf" = h2o.rmse(h2o.performance(rf_model, newdata = data_valid)),
+  "gbm" = h2o.rmse(h2o.performance(gbm_model, newdata = data_valid))
+)
+
+validation_performances
+```
+
+```{r}
+# test set performance
+h2o.rmse(h2o.performance(gbm_model, newdata = data_test))
+```
+
+```{r}
+# turn back h2oFrames to plain data.frame
+prediction_vs_truth = data.table(cbind(
+    as.data.frame(h2o.predict(gbm_model, newdata = data_test)), # it produces a h2o frame, as.data.frame transforms it back to a data frame
+    as.data.frame(data_test)[["logwage"]]
+))
+
+setnames(prediction_vs_truth, c("prediction", "truth"))
+
+head(prediction_vs_truth)
+
+ggplot(data = prediction_vs_truth,
+       aes(x = truth, y = prediction)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  xlim(3, 6) + ylim(3, 6) +
+  geom_point() +
+  theme_minimal()
+```
+
+And, of course, there is deep learning, too! We'll come to that later.
+Let's just try it out of the box and see validation set performance.
+```{r}
+dl_model <- h2o.deeplearning(X, y, 
+                             training_frame = data_train,
+                             reproducible = TRUE, # needed in deeplearning for full reproducibility, setting the seed is not enough ...
+                             # it does not utilize everything it could, if setting it to TRUE
+                             seed = 123)
+h2o.rmse(h2o.performance(dl_model, newdata = data_valid))
+```
+
+XGboost is also available (however, not on Windows).
