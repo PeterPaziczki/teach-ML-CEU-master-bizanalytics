@@ -17,6 +17,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+#install.packages("keras")
+#library(keras)
+#install_keras()
+
+install.packages("rpart.plot")
+
 library(data.table)
 library(caret)
 library(rpart)
@@ -447,6 +453,8 @@ Random forest with bagging, gradient boosting machine and xgboost turned out to 
 
 Using the Hitters dataset and predicting `log_salary`.
 
+I have loaded the data set and removed the `Salary` column, as we already have a `log_salary` column and that is what we would predict with the model. 59 NAs have also been dropped.
+
 ```{r}
 data <- data.table(Hitters)
 data <- data[!is.na(Salary)]
@@ -455,6 +463,8 @@ data[, Salary := NULL]
 ```
 
 ### 3.1 train two random forest models: one with mtry = 2 and another with mtry = 10 (use the whole dataset and don’t use cross-validation). Inspect variable importance profiles. What do you see in terms of how important the first few variables are relative to each other?
+
+I have named the models `rf_model_mtry_2` and `rf_model_mtry_10` according to the specification of how many features to use.
 
 ```{r}
 train_control <- trainControl()
@@ -481,18 +491,28 @@ rf_model_mtry_10 <- train(log_salary ~ .,
                   importance = T) # to calculate variable importance measures
 rf_model_mtry_10
 ```
+ 
+Variable importance plot for `rf_model_mtry_2`:
 
 ```{r}
 plot(varImp(rf_model_mtry_2))
 ```
 
+Variable importance plot for `rf_model_mtry_10`:
+
 ```{r}
 plot(varImp(rf_model_mtry_10))
 ```
 
+We can see that the third and fourth variables are the same for both models (`CRuns` and `CRBI`), but that is not true for the first and second variables. `CHits` is the first most important variable for model `rf_model_mtry_2`, but only second for `rf_model_mtry_10`, and vica versa for `CAtBat` variable.
+
+In addition to that the third and fourth variables seem to be realtively less important compared to the first two variables in case of model `rf_model_mtry_10`. The otehr variables are also relatively less important compared to the first most improtant variables.
+
 ### 3.2 One of them is more extreme in terms of how the most important and the next ones relate to each other. Give an intuitive explanation how  mtry relates to relative importance of variables in random forest models.
 
-### 3.3 In the same vein, estimate two gbm models and set bag.fraction to 0.1 first and to 0.9 in the second. The tuneGrid should consist of the same values for the two models (a dataframe with one row):
+By setting `mtry` we can constrain how many features the algorith can randomly consider when doing a split. When constraining it to a low number, say 2, the algorith has a lower chance to pick the most relevant feature of the data set, so other, less relevant features would have a higher chance to contribute to the final prediction power. In case of setting `mtry` to 10, it is more likely that the most relevant features can be chosen for the split, so they can contribute more and doing so, less relevant features will contribute relatively less.
+
+### 3.3 In the same vein, estimate two gbm models and set `bag.fraction` to 0.1 first and to 0.9 in the second. The `tuneGrid` should consist of the same values for the two models (a dataframe with one row):
 + n.trees = 500
 + interaction.depth = 5
 + shrinkage = 0.1
@@ -547,3 +567,7 @@ plot(varImp(gbm_model))
 ```{r}
 plot(varImp(gbm_model_2))
 ```
+
+By setting `bag.fraction` to any number between 0 and 1, we can set what fraction of the (training) data we want to use, randomly selected, to build each tree. This can introduce some randomness in the model.
+
+When setting `bag.fraction` to 0.9, because of using almost 100% of the data, we can expect similar results to model `rf_model_mtry_10`. The algorithm had a higher chance of choosing from the relevant variables. But when setting `bag.fraction` to 0.1, teh chance of picking up observations where the above seen relevant variables are not that relevant, is higher, so by chance, other variables have a higher likelyhood of contributing more to the prediction.
