@@ -265,7 +265,7 @@ more_epochs_model <- h2o.deeplearning(x = X,
                  validation_frame = data_valid,
                  hidden = c(32, 32, 32, 32, 32),
                  epochs = 200,
-                 stopping_rounds = 0, # setting it to zero means there is no stopping early stopping applied
+                 stopping_rounds = 0, # setting it to zero means there is no early stopping applied
                  seed = 123)
 h2o.performance(more_epochs_model, data_test)@metrics$AUC
 ```

@@ -292,19 +292,9 @@ tanh_model <- h2o.deeplearning(x = X,
                  seed = 123)
 ```
 
-* `activation`: the nonlinear transformative function used. Default: Rectifier.
-
 ### 1.3.4 Experimenting with `epochs`
 
-Training samples
-
-* `epochs`: how many times will all training datapoints be used
-to adjust the model in the course of the optimization (note: early
-stopping is used by default so there is no guarantee that
-all epochs will be used).
-
-* `mini_batch_size`: after how many training samples is the
-gradient update made (defaults to 1)
+It can be set, how many times all training data points would be used to adjust the model in the course of optimization, it is called `epoch`. It is important to note that if early stopping criteria were set, the would be no guarantee to use all `epoch`. In this experience it is set to 100, early stopping is set to default and structure is from model `deep_small_model` with four hidden layers and 32 neurons on each layer. This structure will be used in all the coming models.
 
 ```{r}
 more_epochs_model <- h2o.deeplearning(x = X, 
@@ -313,11 +303,13 @@ more_epochs_model <- h2o.deeplearning(x = X,
                  validation_frame = data_valid,
                  hidden = c(32, 32, 32, 32, 32),
                  epochs = 200,
-                 stopping_rounds = 0, # setting it to zero means there is no stopping early stopping applied
+                 stopping_rounds = 0, # setting it to zero means there is no early stopping applied
                  seed = 123)
 ```
 
-### 1.3.5 Batch
+### 1.3.5 Experimenting with `batch`
+
+It can be set that after how many training samples is the gradient update made, it is called `mini_batch_size`, default is one, not I am experimenting with ten.
 
 ```{r}
 higher_batch_size_model <- h2o.deeplearning(x = X, 
@@ -329,11 +321,9 @@ higher_batch_size_model <- h2o.deeplearning(x = X,
                  seed = 123)
 ```
 
-### 1.3.6 Regularization
+### 1.3.6 Experimenting with regularization
 
-* `hidden_dropout_ratios`: with how large probability will neurons
-be left out of the model at a step (defaults to 0.5). Have to use
-"WithDropout" activation to use dropout.
+With attribute called `hidden_dropout_ratios` it can be set that with how large probability will neurons be left out of the model at a step, default is 0.5. There is a possibility to set different values to each layer. To use this kind of regularization a special activitation function is to set, called `WithDropout`, or in this case `RectifierWithDropout`.
 
 ```{r}
 dropout_model <- h2o.deeplearning(x = X, 
@@ -347,15 +337,21 @@ dropout_model <- h2o.deeplearning(x = X,
                  seed = 123)
 ```
 
+Another option to regularization is use attribute `input_dropout_ratio`, by using it some input features can be dropped randomly. In this experiment it is set to 0.4.
+
 ```{r}
 input_dropout_model <- h2o.deeplearning(x = X, 
                  y = y, 
                  training_frame = data_train, 
                  validation_frame = data_valid,
                  hidden = c(32, 32, 32, 32, 32),
-                 input_dropout_ratio = 0.4, # the above showed dropout thign can be applied to the input layer as well
+                 input_dropout_ratio = 0.4, # the above showed dropout technique can be applied to the input layer as well
                  seed = 123)
 ```
+
+### 1.3.7 Experimenting with Lasso and Ridge regularization
+
+Another option to do regularization is doing Lasso and Ridge by using attributes `l1` and `l2`, weight on $L1$ (lasso) and $L2$ (ridge) penalty terms.
 
 ```{r}
 regularized_model <- h2o.deeplearning(x = X, 
@@ -363,19 +359,15 @@ regularized_model <- h2o.deeplearning(x = X,
                  training_frame = data_train, 
                  validation_frame = data_valid,
                  hidden = c(32, 32, 32, 32, 32),
-                 # NN is a highly parameterized model, every weight is a parameter ...
+                 # NN is a highly parameterized model, every weight is already a parameter
                  l1 = 0.001,
                  l2 = 0.001,
                  seed = 123)
 ```
 
-early stopping options: `stopping_rounds`, `stoppnig_metric`, `stopping_tolerance`
+### 1.3.8 Experimenting with early stopping options
 
-Training constantly tracks validation frame performance. Early stopping is enabled
-by default but can be tuned when to stop. This, again, is to prevent overfitting.
-(If you don't supply a `validation_frame`, early stopping still works but based on 
-metrics calculated from the training set = may not be as informative for out of sample
-performance.)
+Training constantly tracks validation frame performance. Early stopping is enabled by default but can be tuned when to stop. This, again, is to prevent overfitting. (If one does not supply a `validation_frame`, early stopping still works but based on metrics calculated from the training set = may not be as informative for out of sample performance.) There are early stopping options, such as `stopping_rounds`, `stoppnig_metric` and `stopping_tolerance`. In this experiment `stopping_rounds` is set to two, `stoppnig_metric` is `AUC` and `stopping_tolerance` is 0.01.
 
 ```{r}
 early_stopping_model <- h2o.deeplearning(x = X, 
@@ -419,11 +411,14 @@ validation_performances <- list(
 validation_performances
 ```
 
+The `deep_large_model` had the best performance among the neural nets, but the `benchmark_gbm` outperformed it. So summarizing it, neural nets could outperform random forest in many cases, but gradient boosting machine model was far the best over neural nets.
+
 ### 1.5 Evaluate the model that performs best based on the validation set on the test set.
 
-The best performing model was the `benchmark_gbm` model on the validation set with AUC of `0.7201964`.
+The best performing model was the `benchmark_gbm` benchmark model on the validation set with AUC of `0.7201964`.
 
 ```{r}
+h2o.performance(gbm_model, data_valid)@metrics$AUC
 h2o.performance(gbm_model, data_test)@metrics$AUC
 ```
 
