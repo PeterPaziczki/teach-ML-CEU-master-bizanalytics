@@ -746,3 +746,191 @@ print(h2o.auc(h2o.performance(ensemble_model_grid_gbm, newdata = data_test)))
 ```
 
 The stacked model could outperform all the individual models. I noted that the one of the individual models was pretty close to the stacked, but it does not apply to the rest.
+
+## 2. Fashion image classification using `keras`
+
+Take the “Fashion MNIST dataset” where images of fashion items are to be classified in a similar manner to what we saw with handwritten digits (see more here). Images are in exactly the same format as we saw digits: 28x28 pixel grayscale images. The task is to build deep neural net models to predict image classes. The goal is to have as accurate classifier as possible: we are using accuracy as a measure of predictive power.
+
+```{r}
+library(keras)
+fashion_mnist <- dataset_fashion_mnist()
+x_train <- fashion_mnist$train$x
+y_train <- fashion_mnist$train$y
+x_test <- fashion_mnist$test$x
+y_test <- fashion_mnist$test$y
+```
+
+### 3.1 Show some example images from the data.
+
+We are going to classify fashion items, it is an example of multiclass classification. The train data set has 60.000 images with a resolution of 28x28 pixels. We have 10.000 images in the test with the same resolution. We have the following labels for fashion items:
+
++ 0 T-shirt/top
++ 1 Trouser
++ 2 Pullover
++ 3 Dress
++ 4 Coat
++ 5 Sandal
++ 6 Shirt
++ 7 Sneaker
++ 8 Bag
++ 9 Ankle boot 
+
+```{r, fig.width=2, fig.height=2}
+show_mnist_image <- function(x) {
+  image(1:28, 1:28, t(x)[,nrow(x):1],col=gray((0:255)/255)) 
+}
+
+# showing some example images from the training data
+
+show_mnist_image(x_train[18, , ])
+y_train[18] # the GT - ground truth - it is a T-shirt/top
+
+show_mnist_image(x_train[19, , ])
+y_train[19] # it is a shirt
+
+show_mnist_image(x_train[20, , ])
+y_train[20] # coat
+
+show_mnist_image(x_train[21, , ])
+y_train[21] # dress
+
+show_mnist_image(x_train[22, , ])
+y_train[22] # trouser
+```
+
+### 3.2 Train a fully connected deep network to predict items.
+
++ Normalize the data similarly to what we saw with MNIST.
+
++ Experiment with network architectures and settings (number of hidden layers, number of nodes, activation functions, etc.)
+
++ Explain what you have tried, what worked and what did not. Present a final model.
+
++ Make sure that you use enough epochs so that the validation error starts flattening out - provide a plot about the training history (  plot(history))
+
+I need to reshape and rescale the data so I could work with it. First I need to create vectors of each images. As the resolution is 28x28 pixels, length of each vector will be 28x28 = 784. Every value in the vector represents a pixel, with a number between 0 and 255, represing a shade of grey. I need to rescale them, so they would be between 0 and 1.
+
+```{r}
+# reshaping images
+x_train <- array_reshape(x_train, c(dim(x_train)[1], 784)) # creating vector with a length of 784 features of matrices sized 28x28
+# every pixel is a feature
+x_test <- array_reshape(x_test, c(dim(x_test)[1], 784)) 
+
+# rescaling
+x_train <- x_train / 255 # resclaing it so it can be between 0 and 1
+x_test <- x_test / 255
+
+# one-hot encoding of the target variable
+y_train <- to_categorical(y_train, 10) # it is a Keras function, this is the way that Keras accepts outcome variables
+y_test <- to_categorical(y_test, 10)
+```
+
+### 3.2.1 Benchmark model
+
+First I am going to build a benchmark and will try to inprove it. 
+
+First step is to define the model. The core data structure of Keras is a model, a way to organize layers. The simplest type of model is the Sequential model, a linear stack of layers. I begin by creating a sequential model and then adding layers using the pipe (%>%) operator.
+
+```{r}
+model <- keras_model_sequential() # sequental, because we go layer by layer
+model %>% 
+  layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 10, activation = 'softmax')
+```
+
+The `input_shape` argument to the first layer specifies the shape of the input data (a length 784 numeric vector representing a grayscale image). The final layer outputs a length 10 numeric vector (probabilities for each digit) using a softmax activation function.
+
+By using the `summary()` function I can print the details of the model, please find it below.
+
+```{r}
+summary(model)
+```
+
+Next step is to compile the model with:
+
++ an appropriate loss function, `categorical_crossentropy` in this case,
+
++ an optimizer, this time it `optimizer_rmsprop()`, it divides the gradient by a running average of its recent magnitude. It is recommended to leave the parameters of this optimizer at their default values (except the learning rate, which can be freely tuned).
+
++ and metrics, `accuracy` was chosen in this exercise.
+
+```{r}
+model %>% compile(
+  loss = 'categorical_crossentropy', # defining a loss function
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy') # chossing metrics
+)
+```
+
+The next step is training and evaluation. I need to use the `fit()` function to train the model for 30 epochs using batches of 128 images:
+
+```{r}
+history <- model %>% fit(
+  x_train, y_train, # defining the training and the outcome data-sets
+  epochs = 30, batch_size = 128, # batc_size defines the number of samples that are going to be propagated through the network
+  validation_split = 0.2 # 20% of training set will be set aside for validation
+)
+```
+
+The charts are being drawn when building the model. The upper chart is the loss function, the bottom one is about the number of echos. The more echos we have, the better results we can achieve, at least this is what the it suggests. The accuracy we could reach was `0.9108`. I will try to inprove it in the next section.
+
+The `history` object returned by `fit()` includes loss and accuracy metrics which I am plotting below:
+
+```{r}
+plot(history)
+```
+
+### 3.2.2 Inproved model
+
+Now I am trying to improve the model by adding another layer to it and experimenting with the network architecture and settings. In this new layer I am setting:
+
++ the `units` in `layer_dense` to 256, it is the dimensionality of the output space;
+
++ the rate of `layer_dropout` to 0.4, it is the fraction of the input units to drop randomly;
+
+```{r}
+model <- keras_model_sequential() 
+model %>% 
+  layer_dense(units = 256, activation = 'relu', input_shape = c(784)) %>% 
+  layer_dropout(rate = 0.4) %>% 
+  layer_dense(units = 128, activation = 'relu') %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 10, activation = 'softmax')
+```
+
+We can see that we have more layers.
+
+```{r}
+summary(model)
+```
+
+```{r}
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+```
+
+```{r}
+history <- model %>% fit(
+  x_train, y_train, # defining the training and the outcome data-sets
+  epochs = 100, batch_size = 128, 
+  validation_split = 0.2 # 20% of training set will be set aside for validation
+)
+```
+
+The `history` object returned by `fit()` includes loss and accuracy metrics which I am plotting below:
+
+```{r}
+plot(history)
+```
+
+### 3.3 Evaluate the model on the test set. How does test error compare to validation error?
+
+```{r}
+model %>% evaluate(x_test, y_test)
+```
+
+### 3.4 Try building a convolutional neural network and see if you can improve test set performance.
