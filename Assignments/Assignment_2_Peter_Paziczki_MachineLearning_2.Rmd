@@ -23,6 +23,7 @@ In the first two problems I will work with the medical appointment no-show datas
 ```{r}
 library(data.table)
 library(magrittr)
+library(GGally)
 
 data <- fread("../data/medical-appointments-no-show/no-show-data.csv")
 
@@ -127,7 +128,9 @@ nrow(data_test)
 ```{r}
 y <- "no_show"  # the outcome variable
 X <- setdiff(names(data), y) # the variables we are going to use for prediction, excluding the outcome variable
+```
 
+```{r}
 # random forests
 rf_params <- list(ntrees = c(500), # number of trees to estimate
                   mtries = c(2, 3, 5)) # number of features that the algorithm can randomly consider at each split
@@ -160,7 +163,7 @@ gbm_grid <- h2o.grid(x = X,
                      algorithm = "gbm", 
                      nfolds = 5, # doing n-fold cross-validation
                      seed = 123,
-                     ntrees = 300, #♀ number of trees to build
+                     ntrees = 300, # number of trees to build
                      hyper_params = gbm_params)
 
 h2o.getGrid(gbm_grid@grid_id, sort_by = "rmse", decreasing = FALSE)
@@ -294,7 +297,7 @@ tanh_model <- h2o.deeplearning(x = X,
 
 ### 1.3.4 Experimenting with `epochs`
 
-It can be set, how many times all training data points would be used to adjust the model in the course of optimization, it is called `epoch`. It is important to note that if early stopping criteria were set, the would be no guarantee to use all `epoch`. In this experience it is set to 100, early stopping is set to default and structure is from model `deep_small_model` with four hidden layers and 32 neurons on each layer. This structure will be used in all the coming models.
+It can be set, how many times all training data points would be used to adjust the model in the course of optimization, it is called `epoch`. It is important to note that if early stopping criteria were set, the would be no guarantee to use all `epoch`. In this experience it is set to 200, early stopping is set to default and structure is from model `deep_small_model` with four hidden layers and 32 neurons on each layer. This structure will be used in all the coming models.
 
 ```{r}
 more_epochs_model <- h2o.deeplearning(x = X, 
@@ -337,7 +340,7 @@ dropout_model <- h2o.deeplearning(x = X,
                  seed = 123)
 ```
 
-Another option to regularization is use attribute `input_dropout_ratio`, by using it some input features can be dropped randomly. In this experiment it is set to 0.4.
+Another option to regularization is use attribute `input_dropout_ratio`, by using it some input features can be dropped randomly from the input layer. In this experiment it is set to 0.4.
 
 ```{r}
 input_dropout_model <- h2o.deeplearning(x = X, 
@@ -415,11 +418,331 @@ The `deep_large_model` had the best performance among the neural nets, but the `
 
 ### 1.5 Evaluate the model that performs best based on the validation set on the test set.
 
-The best performing model was the `benchmark_gbm` benchmark model on the validation set with AUC of `0.7201964`.
+The best performing model on the validation set, of all models, including the becnhmark models too, was the `benchmark_gbm` benchmark model with AUC of `0.7201964`. Its performance on the test is close to the previous result, it was `AUC = 0.7187`.
 
 ```{r}
 h2o.performance(gbm_model, data_valid)@metrics$AUC
 h2o.performance(gbm_model, data_test)@metrics$AUC
 ```
 
-Its performance on the test is close to the previous result, it was `AUC = 0.7187`.
+The best performing neural net model on the validation set was the `tanh_model` with `AUC = 0.712112` and had a result of `AUC = 0.7115219` on the test set. This the model where I was experimenting with the activitation function.
+
+```{r}
+h2o.performance(tanh_model, data_valid)@metrics$AUC
+h2o.performance(tanh_model, data_test)@metrics$AUC
+```
+
+## 2. Stacking with `h2o`
+
+Take the same problem and data splits.
+
+### 2.1 Build at least 4 models of different families using cross validation, keeping cross validated predictions.
+
+#### 2.1.1 I am going to build different base learners, starting with a `GBM` model, building 300 trees, using 5-fold cross-validation and keeping cross validated predictions, setting `max_depth` to 5, `learn_rate` to 0.1 and `col_sample_rate` to 0.5.
+
+```{r}
+gbm_model <- h2o.gbm(
+  X, y,
+  training_frame = data_train,
+  ntrees = 300, 
+  max_depth = 5, 
+  learn_rate = 0.1,
+  col_sample_rate = 0.5,
+  seed = 123,
+  nfolds = 5, 
+  keep_cross_validation_predictions = TRUE # the scores are the cross validation predictions
+  # score is a predicted probability that the prediction is true
+)
+```
+
+#### 2.1.2 More complex `GBM` model using Grid support
+
+I am still building a `GBM` model, but this time a more complex one by less constraining the training.
+
+```{r}
+gbm_model_complex <- h2o.gbm(
+  X, y,
+  training_frame = data_train,
+  ntrees = 500, 
+  max_depth = 13, 
+  learn_rate = 0.05, 
+  col_sample_rate = 0.8,
+  seed = 123,
+  nfolds = 5, 
+  keep_cross_validation_predictions = TRUE # the scores are the cross validation predictions
+  # score is a predicted probability that the prediction is true
+)
+```
+
+#### 2.1.3 Deep learning model
+
+I am building a very simple deep learning model, having only two hidden layers, with 32 and 8 nodes on the layers.
+
+```{r}
+deeplearning_model <- h2o.deeplearning(
+  X, y,
+  training_frame = data_train,
+  hidden = c(32, 8),
+  seed = 123,
+  nfolds = 5, 
+  keep_cross_validation_predictions = TRUE
+)
+```
+
+#### 2.1.4 More complex deep learning model
+
+Now I am building a more complex deep learning model, having three hidden layers with 100 neurons on each, having a `Tanh` activitation function and setting `epochs` to 50.
+
+```{r}
+deeplearning_model_complex <- h2o.deeplearning(
+  X, y,
+  training_frame = data_train,
+  hidden = c(100, 100, 100),
+  seed = 123,
+  nfolds = 5,
+  activation = "Tanh",
+  epochs = 50,
+  keep_cross_validation_predictions = TRUE
+)
+```
+
+#### 2.1.5 Random forest model
+
+I am building a simple random forest model, building 300 trees, trying different values for `mtries` (two and three), and setting `min_split_improvement` to 0,001.
+
+```{r}
+randomforest_model <- h2o.randomForest(
+  X, y,
+  training_frame = data_train,
+  seed = 123,
+  nfolds = 5, 
+  ntrees = 300,
+  mtries = 3,
+  min_split_improvement = 1e-03,
+  keep_cross_validation_predictions = TRUE
+)
+```
+
+#### 2.1.6 Random forest model
+
+I am building a more complex random forest model, building 500 trees, trying different values for `mtries` (five and eight), and setting `min_split_improvement` to 0,00001.
+
+```{r}
+randomforest_model_complex <- h2o.randomForest(
+  X, y,
+  training_frame = data_train,
+  seed = 123,
+  nfolds = 5, 
+  ntrees = 500,
+  mtries = 8,
+  min_split_improvement = 1e-05,
+  keep_cross_validation_predictions = TRUE
+)
+```
+
+#### 2.1.7 `XGBoost` model
+
+I was trying to build an `XGBoost` model, but unfortunately I couldn't. The `h2o.xgboost.available()` function asks the H2O server whether a `XGBoost` model can be built (depends on availability of native backend). Returns True if a such a model can be built and False otherwise. It returned False in my case.
+
+```{r}
+h2o.xgboost.available()
+```
+
+### 2.2 Evaluate validation set performance of each model.
+
+```{r}
+# validation set performance
+
+# checking performance of base learner models on validation set
+validation_performances <- list(
+  "gbm_model" = h2o.performance(gbm_model, data_valid)@metrics$AUC,
+  "gbm_model_complex" = h2o.performance(gbm_model_complex, data_valid)@metrics$AUC,
+  "deeplearning_model" = h2o.performance(deeplearning_model, data_valid)@metrics$AUC,
+  "deeplearning_model_complex" = h2o.performance(deeplearning_model_complex, data_valid)@metrics$AUC,
+  "randomforest_model" = h2o.performance(randomforest_model, data_valid)@metrics$AUC,
+  "randomforest_model_complex" = h2o.performance(randomforest_model_complex, data_valid)@metrics$AUC
+)
+
+validation_performances
+```
+
+```{r, eval = FALSE, echo = FALSE}
+# validation set performance - another way to evaluate it
+
+# checking performance of base learner models on validation set
+validation_performances <- list(
+  "gbm_model" = print(h2o.auc(h2o.performance(gbm_model, newdata = data_valid))),
+  "gbm_model_complex" = print(h2o.auc(h2o.performance(gbm_model_complex, newdata = data_valid))),
+  "deeplearning_model" = print(h2o.auc(h2o.performance(deeplearning_model, newdata = data_valid))),
+  "deeplearning_model_complex" = print(h2o.auc(h2o.performance(deeplearning_model_complex, newdata = data_valid))),
+  "randomforest_model" = print(h2o.auc(h2o.performance(randomforest_model, newdata = data_valid))),
+  "randomforest_model_complex" = print(h2o.auc(h2o.performance(randomforest_model_complex, newdata = data_valid)))
+)
+validation_performances
+```
+
+### 2.3 How large are the correlations of predicted scores of the validation set produced by the base learners?
+
+Below I am inspecting, to what extent are predicted scores correlated. It is not surprising that they are correlated, they all try to predict the same thing, but still there are scores that have a low correlation, for example the `deeplearning_model` and the `randomforest_model_complex` models, they are the least correlated. The most correlated score were produced by `randomforest_model` and `randomforest_model_complex` models, though their performance is quite far from each other. It is very interesting that `deeplearning_model` and `deeplearning_model_complex` models are not strongly correlated at all, though their performance is close to each other.
+
+```{r}
+# inspect test set correlations of scores
+predictions <- data.table(
+  "gbm" = as.data.frame(h2o.predict(gbm_model, newdata = data_test)$Y)$Y,
+  "gbm_complex" = as.data.frame(h2o.predict(gbm_model_complex, newdata = data_test)$Y)$Y,
+  "dl" = as.data.frame(h2o.predict(deeplearning_model, newdata = data_test)$Y)$Y,
+  "dl_complex" = as.data.frame(h2o.predict(deeplearning_model_complex, newdata = data_test)$Y)$Y,
+  "rf" = as.data.frame(h2o.predict(randomforest_model, newdata = data_test)$Y)$Y,
+  "rf_complex" = as.data.frame(h2o.predict(randomforest_model_complex, newdata = data_test)$Y)$Y
+)
+
+ggcorr(predictions, label = TRUE, label_round = 2)
+```
+
+### 2.4 Create a stacked ensemble model from the base learners. Experiment with at least two different ensembling meta learners.
+
+#### 2.4.1 `GLM` model as meta learner
+
+The default meta learner is a `GLM` model, now I am tranining a `GLM` meta learner with default settings.
+
+```{r}
+ensemble_model_glm <- h2o.stackedEnsemble( # built in h2o function, it estimates the meta model
+                                       # on the scores estimated by the previously trained models
+  X, y,
+  training_frame = data_train,
+  base_models = list(gbm_model, 
+                     gbm_model_complex,
+                     deeplearning_model,
+                     deeplearning_model_complex,
+                     randomforest_model,
+                     randomforest_model_complex))
+```
+
+#### 2.4.2 `GBM` model as meta learner
+
+Now I am experimenting with `GBM` as the meta model, with default parameters.
+
+```{r}
+ensemble_model_gbm <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = data_train,
+  metalearner_algorithm = "gbm",
+  base_models = list(gbm_model, 
+                     gbm_model_complex,
+                     deeplearning_model,
+                     deeplearning_model_complex,
+                     randomforest_model,
+                     randomforest_model_complex))
+```
+
+#### 2.4.3 `drf` model as meta learner
+
+Now I am experimenting with `drf` (random forest) as the meta model, with default parameters.
+
+```{r}
+ensemble_model_drf <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = data_train,
+  metalearner_algorithm = "drf",
+  base_models = list(gbm_model, 
+                     gbm_model_complex,
+                     deeplearning_model,
+                     deeplearning_model_complex,
+                     randomforest_model,
+                     randomforest_model_complex))
+```
+
+#### 2.4.4 `deeplearning` model as meta learner
+
+Now I am experimenting with `deeplearning` as the meta model, with default parameters.
+
+```{r}
+ensemble_model_dl <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = data_train,
+  metalearner_algorithm = "deeplearning",
+  base_models = list(gbm_model, 
+                     gbm_model_complex,
+                     deeplearning_model,
+                     deeplearning_model_complex,
+                     randomforest_model,
+                     randomforest_model_complex))
+```
+
+### 2.5 Evaluate ensembles on validation set. Did it improve prediction?
+
+Using random forest as meta learner had the lowest performance. `GBM` as meta learner had better results compared to random forest, but couldn't outperform a single `GBM` model. Deep learning as a meta model outperformed all the single models and the two meta models I just mentioned. The best performing meta model was the `GLM` with AUC = `0.7131943`. 
+
+```{r}
+# validation set performance
+
+# checking performance of ensemble models on validation set
+validation_performances <- list(
+  "glm" = print(h2o.auc(h2o.performance(ensemble_model_glm, newdata = data_valid))),
+  "gbm" = print(h2o.auc(h2o.performance(ensemble_model_gbm, newdata = data_valid))),
+  "rf" = print(h2o.auc(h2o.performance(ensemble_model_drf, newdata = data_valid))),
+  "dl" = print(h2o.auc(h2o.performance(ensemble_model_dl, newdata = data_valid)))
+)
+
+validation_performances
+```
+
+### 2.6 Evaluate the best performing model on the test set. How does performance compare to that of the validation set?
+
+As `GLM` was the best meta learner, I validated it on the test set and had a performance of AUC = `0.7117571`. It is quite close to the results of the validation on the validation set.
+
+```{r}
+print(h2o.auc(h2o.performance(ensemble_model_glm, newdata = data_test)))
+```
+
+### 2.7 Extra experiment
+
+Meta-learning can also be built upon same-family, different hyperparameter models via a grid of hyperparameters. I am experimenting with a `GBM` model. First I am building models with different parameters for `learn_rate` and `max_depth`.
+
+```{r}
+learn_rate_opt <- c(0.1, 0.3)
+max_depth_opt <- c(3, 5, 7) # we can use cross-validation to choose the best hyperparameter
+hyper_params <- list(learn_rate = learn_rate_opt,
+                     max_depth = max_depth_opt)
+
+gbm_grid <- h2o.grid(
+  x = X, y = y,
+  training_frame = data_train,
+  algorithm = "gbm",
+  ntrees = 100,
+  hyper_params = hyper_params,
+  seed = 123,
+  nfolds = 5, 
+  keep_cross_validation_predictions = TRUE)
+```
+
+Now I am checking the performance of these models on the test set.
+
+```{r}
+# individual test set performances
+for (model_id in gbm_grid@model_ids) {
+  model <- h2o.getModel(model_id)
+  print(model_id)
+  print(h2o.auc(h2o.performance(model, newdata = data_test)))
+}
+
+# individually none of them reached 0.72, but by stacking them we could improve that
+```
+
+Now I am stacking these models.
+
+```{r}
+ensemble_model_grid_gbm <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = data_train,
+  base_models = gbm_grid@model_ids)
+```
+
+Now I am evaluating the performance of the stacked model on the test set.
+
+```{r}
+print(h2o.auc(h2o.performance(ensemble_model_grid_gbm, newdata = data_test)))
+# by stacking we improved the model 
+```
+
+The stacked model could outperform all the individual models. I noted that the one of the individual models was pretty close to the stacked, but it does not apply to the rest.
