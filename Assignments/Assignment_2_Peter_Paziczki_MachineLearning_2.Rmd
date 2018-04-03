@@ -747,7 +747,7 @@ print(h2o.auc(h2o.performance(ensemble_model_grid_gbm, newdata = data_test)))
 
 The stacked model could outperform all the individual models. I noted that the one of the individual models was pretty close to the stacked, but it does not apply to the rest.
 
-## 2. Fashion image classification using `keras`
+## 3. Fashion image classification using `keras`
 
 Take the “Fashion MNIST dataset” where images of fashion items are to be classified in a similar manner to what we saw with handwritten digits (see more here). Images are in exactly the same format as we saw digits: 28x28 pixel grayscale images. The task is to build deep neural net models to predict image classes. The goal is to have as accurate classifier as possible: we are using accuracy as a measure of predictive power.
 
@@ -827,7 +827,7 @@ y_test <- to_categorical(y_test, 10)
 
 ### 3.2.1 Benchmark model
 
-First I am going to build a benchmark and will try to inprove it. 
+First I am going to build a benchmark and will try to improve it. 
 
 First step is to define the model. The core data structure of Keras is a model, a way to organize layers. The simplest type of model is the Sequential model, a linear stack of layers. I begin by creating a sequential model and then adding layers using the pipe (%>%) operator.
 
@@ -873,7 +873,7 @@ history <- model %>% fit(
 )
 ```
 
-The charts are being drawn when building the model. The upper chart is the loss function, the bottom one is about the number of echos. The more echos we have, the better results we can achieve, at least this is what the it suggests. The accuracy we could reach was `0.9108`. I will try to inprove it in the next section.
+The charts are being drawn when building the model. The upper chart is the loss function, the bottom one is about the number of echos. The more echos we have, the better results we can achieve, at least this is what the it suggests. The accuracy we could reach was about `0.91`. I will try to improve it in the next section.
 
 The `history` object returned by `fit()` includes loss and accuracy metrics which I am plotting below:
 
@@ -881,7 +881,11 @@ The `history` object returned by `fit()` includes loss and accuracy metrics whic
 plot(history)
 ```
 
-### 3.2.2 Inproved model
+```{r}
+model %>% evaluate(x_test, y_test)
+```
+
+### 3.2.2 Trying to improve the model
 
 Now I am trying to improve the model by adding another layer to it and experimenting with the network architecture and settings. In this new layer I am setting:
 
@@ -893,11 +897,13 @@ Now I am trying to improve the model by adding another layer to it and experimen
 model <- keras_model_sequential() 
 model %>% 
   layer_dense(units = 256, activation = 'relu', input_shape = c(784)) %>% 
-  layer_dropout(rate = 0.4) %>% 
+  layer_dropout(rate = 0.55) %>% 
   layer_dense(units = 128, activation = 'relu') %>%
   layer_dropout(rate = 0.3) %>%
   layer_dense(units = 10, activation = 'softmax')
 ```
+
+(Note: I experimented with different architectures, with 128 and 512 units on the first layer, but both gave significantly worse results than with 256. I also experimented with different dropout rates, 0.55 seemed to be the optimal choice. ``0.8`, `0.4` and `0.6` gave worse results.)
 
 We can see that we have more layers.
 
@@ -908,15 +914,17 @@ summary(model)
 ```{r}
 model %>% compile(
   loss = 'categorical_crossentropy',
-  optimizer = optimizer_rmsprop(),
+  optimizer = optimizer_adamax(),
   metrics = c('accuracy')
 )
 ```
 
+(Note: I experimented with different loss functions, such as `mean_squared_error`, `categorical_crossentropy`, `kullback_leibler_divergence`, `cosine_proximity`, `mean_squared_logarithmic_error`, `categorical_hinge`, `squared_hinge`, `poisson` and `logcosh`, but couldn't make test performance better than 90%. I tried other optimizers, but found `optimizer_adamax()` the best one. `epochs` was set to 100 in early trials, but I found 75 more than enough in all cases.)
+
 ```{r}
 history <- model %>% fit(
   x_train, y_train, # defining the training and the outcome data-sets
-  epochs = 100, batch_size = 128, 
+  epochs = 75, batch_size = 128, 
   validation_split = 0.2 # 20% of training set will be set aside for validation
 )
 ```
@@ -933,4 +941,69 @@ plot(history)
 model %>% evaluate(x_test, y_test)
 ```
 
+I tried to improve the model, but couldn't achieve significant improvement compared to the first model with less layers and `epochs`.
+
 ### 3.4 Try building a convolutional neural network and see if you can improve test set performance.
+
+```{r}
+mnist <- dataset_mnist()
+x_train <- mnist$train$x
+y_train <- mnist$train$y
+x_test <- mnist$test$x
+y_test <- mnist$test$y
+
+x_train <- array_reshape(x_train, c(nrow(x_train), 28, 28, 1))
+x_test <- array_reshape(x_test, c(nrow(x_test), 28, 28, 1))
+
+# rescale
+x_train <- x_train / 255
+x_test <- x_test / 255
+
+# one-hot encoding of the target variable
+y_train <- to_categorical(y_train, 10)
+y_test <- to_categorical(y_test, 10)
+```
+
+This `layer_conv_2d` layer creates a convolution kernel that is convolved with the layer input to produce a tensor of outputs.
+
+```{r}
+cnn_model <- keras_model_sequential() 
+cnn_model %>% 
+  layer_conv_2d(filters = 32,
+                kernel_size = c(3, 3), # An integer or list of 2 integers, specifying the width and height of the 2D convolution window
+                activation = 'relu',
+                input_shape = c(28, 28, 1)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_dropout(rate = 0.25) %>%
+  layer_flatten() %>% 
+  layer_dense(units = 32, activation = 'relu') %>% 
+  layer_dense(units = 10, activation = 'softmax')
+# these works better than the previously introduced NNs
+```
+
+```{r}
+summary(cnn_model)
+```
+
+```{r}
+cnn_model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+```
+
+```{r}
+history <- cnn_model %>% fit(
+  x_train, y_train, 
+  epochs = 20, 
+  batch_size = 128, 
+  validation_split = 0.2
+)
+```
+
+```{r}
+cnn_model %>% evaluate(x_test, y_test)
+```
+
+Test set performance could be significantly improved!
